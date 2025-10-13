@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ECC_Tool.Plugins</RootNamespace>
+  </PropertyGroup>
+
+  <Target Name="CopyPluginDll" AfterTargets="Build">
+    <Copy SourceFiles="$(OutputPath)ECC_Tool.Plugins.dll"
+          DestinationFolder="..\..\ECC_Tool\Plugins\SampleTool\" />
+  </Target>
+
+</Project>

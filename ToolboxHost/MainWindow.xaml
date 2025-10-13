@@ -1,0 +1,147 @@
+﻿<Window x:Class="ToolboxHost.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="2317-Tools" 
+        Height="700" 
+        Width="1000"
+        WindowStartupLocation="CenterScreen"
+        Icon="/Resource/ToolBox.ico">
+
+    <Window.Resources>
+        <!-- 定义样式 -->
+        <Style x:Key="PluginListItemStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="5,2"/>
+        </Style>
+
+        <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="Gray"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- 顶部菜单栏 -->
+        <Menu DockPanel.Dock="Top" Background="WhiteSmoke">
+            <!-- 将刷新按钮放在最前面 -->
+            <MenuItem Header="刷新(_R)" Click="RefreshPluginList_Click"/>
+
+            <MenuItem Header="文件(_F)">
+                <MenuItem Header="导入新插件" Click="ImportNewPlugin_Click"/>
+                <MenuItem Header="打开插件目录" Click="OpenPluginsFolder_Click"/>
+                <MenuItem Header="创建插件模板" Click="CreatePluginTemplate_Click"/>
+                <Separator/>
+                <MenuItem Header="退出(_X)" Click="Exit_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="视图(_V)">
+                <MenuItem Header="插件列表" IsCheckable="True" IsChecked="True" 
+                          Checked="TogglePluginList_Checked" Unchecked="TogglePluginList_Unchecked"/>
+                <MenuItem Header="状态栏" IsCheckable="True" IsChecked="True" 
+                          Checked="ToggleStatusBar_Checked" Unchecked="ToggleStatusBar_Unchecked"/>
+            </MenuItem>
+
+            <MenuItem Header="插件管理(_P)">
+                <MenuItem Header="卸载所有插件" Click="UnloadAllPlugins_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="日志管理(_L)">
+                <MenuItem Header="查看日志摘要" Click="ViewLogSummary_Click"/>
+                <MenuItem Header="打开日志目录" Click="OpenLogsFolder_Click"/>
+                <MenuItem Header="清理过期日志" Click="CleanupOldLogs_Click"/>
+            </MenuItem>
+
+            <MenuItem Header="帮助(_H)">
+                <MenuItem Header="关于(_A)" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- 状态栏 -->
+        <StatusBar DockPanel.Dock="Bottom" Name="StatusBar">
+            <StatusBarItem>
+                <TextBlock Name="StatusText" Style="{StaticResource StatusTextStyle}">就绪</TextBlock>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Name="PluginCountText" Style="{StaticResource StatusTextStyle}">插件: 0</TextBlock>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- 主内容区域 -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" x:Name="PluginListColumn"/>
+                <ColumnDefinition Width="5"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧插件列表 - 移除了按钮区域 -->
+            <Grid Grid.Column="0" Background="WhiteSmoke">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 列表标题 -->
+                <Border Grid.Row="0" Background="LightGray" Padding="10,5">
+                    <TextBlock FontWeight="Bold" Text="已加载的插件"/>
+                </Border>
+
+                <!-- 插件列表 -->
+                <ListBox Grid.Row="1" 
+                         x:Name="PluginListBox" 
+                         SelectionChanged="PluginListBox_SelectionChanged"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         MouseDoubleClick="PluginListBox_MouseDoubleClick">
+
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="打开" Click="OpenSelectedPlugin_Click"/>
+                            <Separator/>
+                            <MenuItem Header="打开文件夹" Click="OpenSelectedPluginFolder_Click"/>
+                            <MenuItem Header="查看信息" Click="ViewPluginInfo_Click"/>
+                            <Separator/>
+                            <MenuItem Header="卸载插件" Click="UnloadSelectedPlugin_Click" Background="LightCoral"/>
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="5">
+                                <TextBlock Text="{Binding Name}" FontWeight="Bold" Style="{StaticResource PluginListItemStyle}"/>
+                                <TextBlock Text="{Binding Description}" Style="{StaticResource PluginListItemStyle}"/>
+                                <TextBlock Text="{Binding Version, StringFormat='版本: {0}'}" Style="{StaticResource PluginListItemStyle}"/>
+                                <TextBlock Text="{Binding Author, StringFormat='作者: {0}'}" Style="{StaticResource PluginListItemStyle}"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+
+            <!-- 分割线 -->
+            <GridSplitter Grid.Column="1" 
+                          HorizontalAlignment="Stretch" 
+                          Background="LightGray"
+                          Width="5"
+                          ShowsPreview="True"/>
+
+            <!-- 右侧工作区 -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- 工作区标题 -->
+                <Border Grid.Row="0" Background="LightGray" Padding="10,5">
+                    <TextBlock x:Name="WorkspaceTitle" FontWeight="Bold" Text="请选择一个插件开始使用"/>
+                </Border>
+
+                <!-- 标签页工作区 -->
+                <TabControl Grid.Row="1" 
+                           x:Name="WorkspaceTabControl" 
+                           SelectionChanged="WorkspaceTabControl_SelectionChanged">
+                </TabControl>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

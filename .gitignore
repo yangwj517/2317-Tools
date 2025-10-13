@@ -1,0 +1,8 @@
+# Visual Studio相关文件
+.vs/
+*.suo
+*.user
+*.ipch
+*.aps
+Debug/
+Release/

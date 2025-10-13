@@ -1,0 +1,270 @@
+﻿<UserControl x:Class="ModbusConfigPlugin.ModbusConfigControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="700" d:DesignWidth="900">
+
+    <UserControl.Resources>
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="SteelBlue"/>
+            <Setter Property="Margin" Value="0,10,0,5"/>
+        </Style>
+
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="5"/>
+        </Style>
+
+        <Style x:Key="ComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+
+        <Style x:Key="TextBoxStyle" TargetType="TextBox">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+
+        <Style x:Key="ButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="MinWidth" Value="80"/>
+        </Style>
+
+        <Style x:Key="CheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="20">
+            <!-- 标题 -->
+            <TextBlock Text="Modbus TCP配置生成器" FontSize="18" FontWeight="Bold" Foreground="DarkBlue" Margin="0,0,0,20"/>
+
+            <!-- Excel文件选择 -->
+            <GroupBox Header="1. Excel文件配置" Padding="10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Excel文件路径:" Style="{StaticResource LabelStyle}"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="FilePathTextBox" Margin="5" IsReadOnly="True"/>
+                    <Button Grid.Row="0" Grid.Column="2" Content="选择文件" Click="SelectExcelFile_Click" Style="{StaticResource ButtonStyle}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Sheet名称:" Style="{StaticResource LabelStyle}"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" x:Name="SheetComboBox" Style="{StaticResource ComboBoxStyle}"
+                              SelectionChanged="SheetComboBox_SelectionChanged"/>
+                    <Button Grid.Row="1" Grid.Column="2" Content="加载Sheet" Click="LoadSheet_Click" Style="{StaticResource ButtonStyle}"/>
+                </Grid>
+            </GroupBox>
+
+            <!-- 功能码特定配置 -->
+            <GroupBox Header="2. 功能码配置" Padding="10" Margin="0,10,0,0">
+                <StackPanel>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="功能码选择:" Style="{StaticResource LabelStyle}"/>
+                        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DefaultFunctionCode" Style="{StaticResource ComboBoxStyle}" 
+                                  SelectionChanged="DefaultFunctionCode_SelectionChanged">
+                            <ComboBoxItem Content="Alarm With Ack" Tag="CODE_0"/>
+                            <ComboBoxItem Content="01 - 读取线圈" Tag="CODE_1"/>
+                            <ComboBoxItem Content="02 - 读取离散输入" Tag="CODE_2"/>
+                            <ComboBoxItem Content="03 - 读取保持寄存器" Tag="CODE_3"/>
+                            <ComboBoxItem Content="04 - 读取输入寄存器" Tag="CODE_4"/>
+                            <ComboBoxItem Content="05 - 写单个线圈" Tag="CODE_5"/>
+                            <ComboBoxItem Content="06 - 写单个寄存器" Tag="CODE_6"/>
+                            <ComboBoxItem Content="15 - 写多个线圈" Tag="CODE_15"/>
+                            <ComboBoxItem Content="16 - 写多个寄存器" Tag="CODE_16"/>
+                            <ComboBoxItem Content="22 - 屏蔽写寄存器" Tag="CODE_22"/>
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="每组最大数量:" Style="{StaticResource LabelStyle}"/>
+                        <TextBox Grid.Row="0" Grid.Column="3" x:Name="GroupMaxNum" Style="{StaticResource TextBoxStyle}" Text="1000"/>
+                    </Grid>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- 列映射配置 - 动态显示 -->
+            <GroupBox Header="3. 列映射配置" Padding="10" Margin="0,10,0,0">
+                <StackPanel>
+                    <TextBlock Text="请选择Excel中各参数对应的列：" Style="{StaticResource LabelStyle}" Margin="0,0,0,10"/>
+
+                    <!-- 公共映射配置 -->
+                    <StackPanel x:Name="CommonMappingPanel">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Point Name -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Point Name:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="PointNameColumn" Style="{StaticResource ComboBoxStyle}"/>
+
+                            <!-- Data Type -->
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Data Type:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="3" x:Name="DataTypeColumn" Style="{StaticResource ComboBoxStyle}"/>
+
+                            <!-- Address -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Address:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="AddressColumn" Style="{StaticResource ComboBoxStyle}"/>
+
+                            <!-- Description -->
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="Description:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="1" Grid.Column="3" x:Name="DescriptionColumn" Style="{StaticResource ComboBoxStyle}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 扫描相关配置 -->
+                    <StackPanel x:Name="ScannerMappingPanel" Visibility="Collapsed">
+                        <Border BorderBrush="LightGray" BorderThickness="0,1,0,0" Margin="0,10,0,5" Padding="0,5,0,0">
+                            <TextBlock Text="Scanner相关配置" Style="{StaticResource SectionHeaderStyle}" Foreground="DarkBlue"/>
+                        </Border>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- ScadaScanner -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="ScadaScanner:" Style="{StaticResource LabelStyle}"/>
+                            <CheckBox Grid.Row="0" Grid.Column="1" x:Name="ScadaScannerCheckBox" Content="启用ScadaScanner" Style="{StaticResource CheckBoxStyle}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 寄存器相关配置 -->
+                    <StackPanel x:Name="RegisterMappingPanel" Visibility="Collapsed">
+                        <Border BorderBrush="LightGray" BorderThickness="0,1,0,0" Margin="0,10,0,5" Padding="0,5,0,0">
+                            <TextBlock Text="寄存器相关配置" Style="{StaticResource SectionHeaderStyle}" Foreground="DarkGreen"/>
+                        </Border>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 字反转 -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="SwapWords:" Style="{StaticResource LabelStyle}"/>
+                            <CheckBox Grid.Row="0" Grid.Column="1" x:Name="WordReverseCheckBox" Content="启用字反转" Style="{StaticResource CheckBoxStyle}"/>
+
+                            <!-- 字节反转 -->
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="SwapBytes:" Style="{StaticResource LabelStyle}"/>
+                            <CheckBox Grid.Row="0" Grid.Column="3" x:Name="ByteReverseCheckBox" Content="启用字节反转" Style="{StaticResource CheckBoxStyle}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 数据处理配置 -->
+                    <StackPanel x:Name="DataProcessingPanel" Visibility="Collapsed">
+                        <Border BorderBrush="LightGray" BorderThickness="0,1,0,0" Margin="0,10,0,5" Padding="0,5,0,0">
+                            <TextBlock Text="数据处理配置" Style="{StaticResource SectionHeaderStyle}" Foreground="DarkOrange"/>
+                        </Border>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 数据死区 -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Deadband:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="DeadbandColumn" Style="{StaticResource ComboBoxStyle}"/>
+
+                            <!-- 输出转换 -->
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="OutputConversion:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="3" x:Name="OutputConversionColumn" Style="{StaticResource ComboBoxStyle}"/>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 报警相关配置 -->
+                    <StackPanel x:Name="AlarmMappingPanel" Visibility="Collapsed">
+                        <Border BorderBrush="LightGray" BorderThickness="0,1,0,0" Margin="0,10,0,5" Padding="0,5,0,0">
+                            <TextBlock Text="报警相关配置" Style="{StaticResource SectionHeaderStyle}" Foreground="DarkRed"/>
+                        </Border>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 报警状态 -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="AckStatus:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="AckStatusColumn" Style="{StaticResource ComboBoxStyle}"/>
+
+                            <!-- 报警命令 -->
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="AckCommand:" Style="{StaticResource LabelStyle}"/>
+                            <ComboBox Grid.Row="0" Grid.Column="3" x:Name="AckCommandColumn" Style="{StaticResource ComboBoxStyle}"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- 预览和生成 -->
+            <GroupBox Header="4. 预览和生成" Padding="10" Margin="0,10,0,0">
+                <StackPanel>
+                    <TextBlock Text="数据预览：" Style="{StaticResource LabelStyle}" Margin="0,0,0,5"/>
+                    <DataGrid x:Name="PreviewDataGrid" Height="150" Margin="5" AutoGenerateColumns="True"/>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                        <Button Content="预览数据" Click="PreviewData_Click" Style="{StaticResource ButtonStyle}" Background="LightBlue" Margin="10,0,0,0"/>
+                        <Button Content="生成XML" Click="GenerateXml_Click" Style="{StaticResource ButtonStyle}" Background="LightGreen" Margin="10,0,0,0"/>
+                        <Button Content="清空" Click="Clear_Click" Style="{StaticResource ButtonStyle}" Background="LightCoral" Margin="10,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- 状态信息 -->
+            <Border Background="LightYellow" Padding="10" Margin="0,10,0,0">
+                <TextBlock x:Name="StatusText" Text="请选择Excel文件开始配置" TextWrapping="Wrap"/>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
