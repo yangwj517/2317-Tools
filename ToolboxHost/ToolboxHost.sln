@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModbusConfigPlugin", "..\Mo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BatchStats", "..\BatchStats\BatchStats.csproj", "{E2121FF8-A8E4-45BC-9123-884EA90F082E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TempBatch", "..\LCCBatch\TempBatch.csproj", "{2BFE3DEB-3CA4-4A13-8770-F385C00875FF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{E2121FF8-A8E4-45BC-9123-884EA90F082E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2121FF8-A8E4-45BC-9123-884EA90F082E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E2121FF8-A8E4-45BC-9123-884EA90F082E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2BFE3DEB-3CA4-4A13-8770-F385C00875FF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2BFE3DEB-3CA4-4A13-8770-F385C00875FF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2BFE3DEB-3CA4-4A13-8770-F385C00875FF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2BFE3DEB-3CA4-4A13-8770-F385C00875FF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
