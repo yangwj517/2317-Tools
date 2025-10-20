@@ -37,7 +37,8 @@ namespace ToolboxHost
                 _pluginManager.PluginUnloaded += OnPluginUnloaded;
 
                 // 加载插件
-                _pluginManager.LoadAllPlugins();
+                // _pluginManager.LoadAllPlugins();
+                _pluginManager.ScanAllPlugins();
 
                 // 更新插件列表
                 UpdatePluginList();
