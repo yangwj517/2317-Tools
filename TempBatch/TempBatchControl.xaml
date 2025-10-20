@@ -6,9 +6,10 @@
              xmlns:local="clr-namespace:TempBatch"
              mc:Ignorable="d" 
              d:DesignHeight="800" d:DesignWidth="1200">
-    <ScrollViewer Margin="10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+    <ScrollViewer Margin="10" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" x:Name="MainScrollViewer">
         <StackPanel Margin="5">
             <TextBlock Text="文件批量生成器" FontSize="18" FontWeight="Bold" Foreground="DarkBlue" Margin="0,0,0,20"/>
+
             <!-- 文件选择区域 -->
             <GroupBox Header="文件选择" Padding="10" Margin="0,0,0,10">
                 <Grid>
@@ -67,14 +68,16 @@
             </GroupBox>
 
             <!-- 数据预览区域 -->
-            <GroupBox Header="数据预览" Padding="10" Margin="0,0,0,10">
+            <GroupBox Header="数据预览（最多显示200行）" Padding="10" Margin="0,0,0,10">
                 <DataGrid x:Name="PreviewDataGrid" 
                           AutoGenerateColumns="True"
                           CanUserSortColumns="True"
                           CanUserResizeColumns="True"
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
-                          MaxHeight="500"/>
+                          Height="200"
+                          MinHeight="150"
+                          MaxHeight="250"/>
             </GroupBox>
 
             <!-- 参数映射配置区域 -->
@@ -97,6 +100,24 @@
                     <CheckBox x:Name="MergeFilesCheckBox" Content="合并生成的文件" Margin="15,5,5,5" VerticalAlignment="Center"/>
                 </StackPanel>
             </GroupBox>
+
+            <!-- 进度条区域 -->
+            <Grid Margin="0,10,0,10" x:Name="ProgressBarContainer" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <ProgressBar Grid.Row="0" x:Name="GenerationProgressBar" 
+                            Height="20" 
+                            Minimum="0" 
+                            Maximum="100" 
+                            Value="0"
+                            Margin="0,0,0,5"/>
+                <TextBlock Grid.Row="1" x:Name="ProgressText" 
+                          Text="准备生成..." 
+                          HorizontalAlignment="Center" 
+                          Foreground="DarkBlue"/>
+            </Grid>
 
             <!-- 状态信息区域 -->
             <Border Background="LightYellow" Padding="10" Margin="0,10,0,0" CornerRadius="3">

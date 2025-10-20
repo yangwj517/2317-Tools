@@ -6,11 +6,28 @@ using System.Linq;
 
 namespace Toolbox.Core
 {
+    public enum PluginState
+    {
+        Scanned,      // 已扫描配置文件
+        Loaded,       // 已加载插件程序集
+        Unloaded      // 已卸载
+    }
+
+    public class PluginMetadata
+    {
+        public PluginInfo Info { get; set; }
+        public string FolderPath { get; set; }
+        public PluginState State { get; set; }
+        public IPlugin Instance { get; set; }
+    }
+
     public class PluginManager
     {
         private List<IPlugin> _plugins;
         private Dictionary<IPlugin, PluginInfo> _pluginConfigs;
         private Dictionary<IPlugin, PluginLoadContext> _pluginLoadContexts;
+        private Dictionary<string, PluginMetadata> _pluginMetadata;  // 按插件名称索引
+        private Dictionary<string, PluginLoadContext> _scannedPluginContexts;  // 存储已扫描插件的加载上下文
         private string _pluginsRootDirectory;
         // 新增：跟踪所有临时文件路径，确保能彻底清理
         private HashSet<string> _allShadowCopiedPaths = new HashSet<string>();
@@ -38,6 +55,8 @@ namespace Toolbox.Core
             _plugins = new List<IPlugin>();
             _pluginConfigs = new Dictionary<IPlugin, PluginInfo>();
             _pluginLoadContexts = new Dictionary<IPlugin, PluginLoadContext>();
+            _pluginMetadata = new Dictionary<string, PluginMetadata>();  // 新增
+            _scannedPluginContexts = new Dictionary<string, PluginLoadContext>();  // 新增
             _pluginsRootDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, pluginsRootDirectory);
 
             EnsurePluginDirectoryStructure();
@@ -56,19 +75,64 @@ namespace Toolbox.Core
             }
         }
 
-        public void LoadAllPlugins()
+        // public void LoadAllPlugins()
+        // {
+        //     Logger.Info($"开始扫描插件目录: {_pluginsRootDirectory}");
+        //
+        //     if (!Directory.Exists(_pluginsRootDirectory))
+        //     {
+        //         Logger.Warning("插件根目录不存在，跳过加载");
+        //         return;
+        //     }
+        //
+        //     var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
+        //         .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
+        //         .ToList();
+        //
+        //     Logger.Info($"找到 {pluginFolders.Count} 个插件文件夹");
+        //
+        //     foreach (var pluginFolder in pluginFolders)
+        //     {
+        //         try
+        //         {
+        //             LoadPluginFromFolder(pluginFolder);
+        //         }
+        //         catch (Exception ex)
+        //         {
+        //             Logger.Error($"加载插件失败 {Path.GetFileName(pluginFolder)}", ex);
+        //         }
+        //     }
+        //
+        //     Logger.Info($"插件加载完成，共加载 {_plugins.Count} 个插件");
+        // }
+
+        // 新增方法：只扫描插件配置，不加载程序集
+        public void ScanAllPlugins()
         {
             Logger.Info($"开始扫描插件目录: {_pluginsRootDirectory}");
+            Logger.Info($"插件根目录是否存在: {Directory.Exists(_pluginsRootDirectory)}");
 
             if (!Directory.Exists(_pluginsRootDirectory))
             {
-                Logger.Warning("插件根目录不存在，跳过加载");
+                Logger.Warning("插件根目录不存在，跳过扫描");
                 return;
             }
+            
+            // 列出所有目录（包括隐藏目录）
+            var allDirs = Directory.GetDirectories(_pluginsRootDirectory);
+            Logger.Info($"插件根目录下所有文件夹数量: {allDirs.Length}");
+    
+            foreach (var dir in allDirs)
+            {
+                var dirInfo = new DirectoryInfo(dir);
+                Logger.Info($"发现文件夹: {dirInfo.Name}, 全路径: {dir}, 属性: {dirInfo.Attributes}");
+            }
+            
+            var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory).ToList();
 
-            var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
-                .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
-                .ToList();
+            // var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
+            //     .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
+            //     .ToList();
 
             Logger.Info($"找到 {pluginFolders.Count} 个插件文件夹");
 
@@ -76,17 +140,194 @@ namespace Toolbox.Core
             {
                 try
                 {
-                    LoadPluginFromFolder(pluginFolder);
+                    ScanPluginFromFolder(pluginFolder);
                 }
                 catch (Exception ex)
                 {
-                    Logger.Error($"加载插件失败 {Path.GetFileName(pluginFolder)}", ex);
+                    Logger.Error($"扫描插件失败 {Path.GetFileName(pluginFolder)}", ex);
                 }
             }
 
-            Logger.Info($"插件加载完成，共加载 {_plugins.Count} 个插件");
+            Logger.Info($"插件扫描完成，共扫描 {_pluginMetadata.Count} 个插件");
         }
 
+// 新增方法：扫描单个插件配置
+        private void ScanPluginFromFolder(string pluginFolder)
+        {
+            var folderName = Path.GetFileName(pluginFolder);
+            Logger.Info($"扫描插件文件夹: {folderName}");
+
+            // 添加调试信息
+            var configPath = Path.Combine(pluginFolder, "plugin.json");
+            Logger.Info($"检查配置文件路径: {configPath}, 文件是否存在: {File.Exists(configPath)}");
+            
+            var pluginConfig = LoadPluginConfig(pluginFolder);
+            
+            // 添加调试信息
+            Logger.Info($"加载的插件配置名称: {pluginConfig.Name}");
+
+            if (!pluginConfig.Enabled)
+            {
+                Logger.Info($"插件 {folderName} 已被禁用，跳过扫描");
+                return;
+            }
+
+            if (!pluginConfig.Enabled)
+            {
+                Logger.Info($"插件 {folderName} 已被禁用，跳过扫描");
+                return;
+            }
+
+            var loadContext = new PluginLoadContext
+            {
+                FolderPath = pluginFolder,
+                ConfigFilePath = Path.Combine(pluginFolder, "plugin.json"),
+                ResourcesPath = Path.Combine(pluginFolder, "Resources"),
+                DependenciesPath = Path.Combine(pluginFolder, "Dependencies"),
+                LoadTime = DateTime.Now
+            };
+
+            var metadata = new PluginMetadata
+            {
+                Info = pluginConfig,
+                FolderPath = pluginFolder,
+                State = PluginState.Scanned
+            };
+
+            _pluginMetadata[pluginConfig.Name] = metadata;
+            _scannedPluginContexts[pluginConfig.Name] = loadContext;
+
+            Logger.Info($"插件扫描完成: {pluginConfig.Name}");
+        }
+
+        // 新增方法：按需加载指定插件
+    public IPlugin LoadPlugin(string pluginName)
+    {
+        if (!_pluginMetadata.TryGetValue(pluginName, out var metadata))
+        {
+            Logger.Warning($"未找到插件元数据: {pluginName}");
+            return null;
+        }
+
+        // 如果已经加载，直接返回实例
+        if (metadata.State == PluginState.Loaded && metadata.Instance != null)
+        {
+            return metadata.Instance;
+        }
+
+        // 执行实际加载逻辑
+        var pluginInstance = LoadPluginFromMetadata(metadata);
+        if (pluginInstance != null)
+        {
+            metadata.Instance = pluginInstance;
+            metadata.State = PluginState.Loaded;
+            _plugins.Add(pluginInstance);
+            _pluginConfigs[pluginInstance] = metadata.Info;
+            _pluginLoadContexts[pluginInstance] = _scannedPluginContexts[pluginName];
+            PluginLoaded?.Invoke(pluginInstance, metadata.Info);
+        }
+
+        return pluginInstance;
+    }
+
+    // 修改原有的 LoadPluginFromFolder 方法为 LoadPluginFromMetadata
+    private IPlugin LoadPluginFromMetadata(PluginMetadata metadata)
+    {
+        var pluginFolder = metadata.FolderPath;
+        var folderName = Path.GetFileName(pluginFolder);
+        Logger.Info($"加载插件: {folderName}");
+
+        SetupPluginDependencyResolution(pluginFolder);
+
+        var expectedDllName = $"{folderName}.dll";
+        var pluginDllPath = Path.Combine(pluginFolder, expectedDllName);
+
+        if (!File.Exists(pluginDllPath))
+        {
+            var dllFiles = Directory.GetFiles(pluginFolder, "*.dll");
+            if (dllFiles.Length == 0)
+            {
+                Logger.Warning($"在文件夹 {folderName} 中未找到DLL文件");
+                return null;
+            }
+            pluginDllPath = dllFiles[0];
+            Logger.Info($"使用找到的DLL: {Path.GetFileName(pluginDllPath)}");
+        }
+
+        string tempShadowDir = Path.Combine(Path.GetTempPath(), "ToolboxPluginShadow",
+            $"{folderName}_{Guid.NewGuid()}");
+        Directory.CreateDirectory(tempShadowDir);
+
+        string shadowCopiedDllPath = Path.Combine(tempShadowDir, Path.GetFileName(pluginDllPath));
+
+        try
+        {
+            bool copySuccess = false;
+            int retryCount = 0;
+            while (!copySuccess && retryCount < 5)
+            {
+                try
+                {
+                    if (File.Exists(shadowCopiedDllPath))
+                    {
+                        File.Delete(shadowCopiedDllPath);
+                    }
+                    File.Copy(pluginDllPath, shadowCopiedDllPath, true);
+                    copySuccess = true;
+                }
+                catch (IOException)
+                {
+                    retryCount++;
+                    System.Threading.Thread.Sleep(100);
+                }
+            }
+
+            if (!copySuccess)
+            {
+                Logger.Error($"多次尝试后仍无法复制文件: {pluginDllPath}");
+                return null;
+            }
+
+            lock (_allShadowCopiedPaths)
+            {
+                _allShadowCopiedPaths.Add(shadowCopiedDllPath);
+            }
+
+            // 更新加载上下文
+            var loadContext = _scannedPluginContexts[metadata.Info.Name];
+            loadContext.ShadowCopiedDllPath = shadowCopiedDllPath;
+
+            var assemblyLoader = new PluginAssemblyLoader(pluginFolder);
+            var assembly = assemblyLoader.LoadFromAssemblyPath(shadowCopiedDllPath);
+            loadContext.Assembly = assembly;
+
+            foreach (Type type in assembly.GetTypes())
+            {
+                if (typeof(IPlugin).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+                {
+                    Logger.Info($"找到插件类型: {type.FullName}");
+
+                    IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
+                    plugin.Initialize();
+
+                    Logger.Info($"插件加载成功: {plugin.Name} v{plugin.Version}");
+                    return plugin;
+                }
+            }
+
+            Logger.Warning($"在 {Path.GetFileName(pluginDllPath)} 中未找到实现IPlugin接口的类型");
+            DeleteShadowCopyFiles(loadContext);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"加载插件失败 {folderName}", ex);
+            DeleteShadowCopyFiles(new PluginLoadContext { ShadowCopiedDllPath = shadowCopiedDllPath });
+            return null;
+        }
+    }
+
+        
         private void LoadPluginFromFolder(string pluginFolder)
         {
             var folderName = Path.GetFileName(pluginFolder);
@@ -409,6 +650,51 @@ namespace Toolbox.Core
             return false;
         }
 
+        // public bool UnloadPlugin(IPlugin plugin)
+        // {
+        //     try
+        //     {
+        //         if (_plugins.Contains(plugin) && _pluginConfigs.TryGetValue(plugin, out var pluginConfig))
+        //         {
+        //             Logger.Info($"开始卸载插件: {plugin.Name}");
+        //
+        //             // 1. 调用插件清理方法
+        //             plugin.Dispose();
+        //
+        //             // 2. 新增：释放插件依赖文件的锁定
+        //             if (_pluginLoadContexts.TryGetValue(plugin, out var loadContext) &&
+        //                 Directory.Exists(loadContext.DependenciesPath))
+        //             {
+        //                 ReleaseDirectoryLocks(loadContext.DependenciesPath);
+        //             }
+        //
+        //             // 3. 清理临时文件
+        //             if (_pluginLoadContexts.TryGetValue(plugin, out var context))
+        //             {
+        //                 DeleteShadowCopyFiles(context);
+        //             }
+        //
+        //             // 4. 移除引用
+        //             _plugins.Remove(plugin);
+        //             _pluginConfigs.Remove(plugin);
+        //             _pluginLoadContexts.Remove(plugin);
+        //
+        //             // 5. 触发事件
+        //             PluginUnloaded?.Invoke(plugin, pluginConfig);
+        //
+        //             Logger.Info($"插件卸载成功: {plugin.Name}");
+        //             return true;
+        //         }
+        //         return false;
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         Logger.Error($"卸载插件失败 {plugin.Name}", ex);
+        //         return false;
+        //     }
+        // }
+        
+        // 修改 UnloadPlugin 方法以支持新结构
         public bool UnloadPlugin(IPlugin plugin)
         {
             try
@@ -417,28 +703,30 @@ namespace Toolbox.Core
                 {
                     Logger.Info($"开始卸载插件: {plugin.Name}");
 
-                    // 1. 调用插件清理方法
                     plugin.Dispose();
 
-                    // 2. 新增：释放插件依赖文件的锁定
                     if (_pluginLoadContexts.TryGetValue(plugin, out var loadContext) &&
                         Directory.Exists(loadContext.DependenciesPath))
                     {
                         ReleaseDirectoryLocks(loadContext.DependenciesPath);
                     }
 
-                    // 3. 清理临时文件
                     if (_pluginLoadContexts.TryGetValue(plugin, out var context))
                     {
                         DeleteShadowCopyFiles(context);
                     }
 
-                    // 4. 移除引用
                     _plugins.Remove(plugin);
                     _pluginConfigs.Remove(plugin);
                     _pluginLoadContexts.Remove(plugin);
 
-                    // 5. 触发事件
+                    // 更新元数据状态
+                    if (_pluginMetadata.TryGetValue(plugin.Name, out var metadata))
+                    {
+                        metadata.State = PluginState.Scanned;
+                        metadata.Instance = null;
+                    }
+
                     PluginUnloaded?.Invoke(plugin, pluginConfig);
 
                     Logger.Info($"插件卸载成功: {plugin.Name}");
@@ -452,7 +740,26 @@ namespace Toolbox.Core
                 return false;
             }
         }
+        
+        // 新增方法：获取所有已扫描的插件信息
+        public IEnumerable<PluginMetadata> GetScannedPlugins()
+        {
+            return _pluginMetadata.Values;
+        }
 
+// 新增方法：检查插件是否已扫描
+        public bool IsPluginScanned(string pluginName)
+        {
+            return _pluginMetadata.ContainsKey(pluginName);
+        }
+
+// 新增方法：检查插件是否已加载
+        public bool IsPluginLoaded(string pluginName)
+        {
+            return _pluginMetadata.TryGetValue(pluginName, out var metadata) && 
+                   metadata.State == PluginState.Loaded;
+        }
+        
         /// <summary>
         /// 释放目录中所有文件的锁定
         /// </summary>
@@ -590,7 +897,8 @@ namespace Toolbox.Core
             ClearAssemblyCache();
 
             // 4. 重新加载插件
-            LoadAllPlugins();
+            // LoadAllPlugins();
+            ScanAllPlugins();
 
             Logger.Info("插件重新加载完成");
         }

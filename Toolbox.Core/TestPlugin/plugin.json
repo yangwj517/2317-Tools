@@ -1,0 +1,9 @@
+﻿{
+  "name": "测试插件1",
+  "version": "1.0.0",
+  "description": "这是一个测试插件",
+  "author": "开发者",
+  "enabled": true,
+  "dependencies": [],
+  "settings": {}
+}
