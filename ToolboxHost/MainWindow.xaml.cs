@@ -311,8 +311,11 @@ namespace ToolboxHost
             Dispatcher.Invoke(() =>
             {
                 PluginListBox.ItemsSource = null;
-                PluginListBox.ItemsSource = _pluginManager.Plugins;
-                PluginCountText.Text = $"插件: {_pluginManager.Plugins.Count}";
+                // PluginListBox.ItemsSource = _pluginManager.Plugins;
+                // PluginCountText.Text = $"插件: {_pluginManager.Plugins.Count}";
+                // 确保这里使用的是正确的数据源
+                PluginListBox.ItemsSource = _pluginManager.GetScannedPlugins().Select(p => p.Info); // 或者其他合适的数据源
+                PluginCountText.Text = $"插件: {_pluginManager.GetScannedPlugins().Count()}"; // 更新计数
             });
         }
 
@@ -354,7 +357,16 @@ namespace ToolboxHost
         {
             if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
             {
-                OpenPluginInTab(selectedPlugin);
+                // OpenPluginInTab(selectedPlugin);
+                if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
+                {
+                    // 根据插件信息加载实际插件
+                    var plugin = _pluginManager.LoadPlugin(selectedPluginInfo.Name);
+                    if (plugin != null)
+                    {
+                        OpenPluginInTab(plugin);
+                    }
+                }
             }
         }
 

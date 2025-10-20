@@ -110,16 +110,29 @@ namespace Toolbox.Core
         public void ScanAllPlugins()
         {
             Logger.Info($"开始扫描插件目录: {_pluginsRootDirectory}");
+            Logger.Info($"插件根目录是否存在: {Directory.Exists(_pluginsRootDirectory)}");
 
             if (!Directory.Exists(_pluginsRootDirectory))
             {
                 Logger.Warning("插件根目录不存在，跳过扫描");
                 return;
             }
+            
+            // 列出所有目录（包括隐藏目录）
+            var allDirs = Directory.GetDirectories(_pluginsRootDirectory);
+            Logger.Info($"插件根目录下所有文件夹数量: {allDirs.Length}");
+    
+            foreach (var dir in allDirs)
+            {
+                var dirInfo = new DirectoryInfo(dir);
+                Logger.Info($"发现文件夹: {dirInfo.Name}, 全路径: {dir}, 属性: {dirInfo.Attributes}");
+            }
+            
+            var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory).ToList();
 
-            var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
-                .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
-                .ToList();
+            // var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
+            //     .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
+            //     .ToList();
 
             Logger.Info($"找到 {pluginFolders.Count} 个插件文件夹");
 
@@ -144,7 +157,20 @@ namespace Toolbox.Core
             var folderName = Path.GetFileName(pluginFolder);
             Logger.Info($"扫描插件文件夹: {folderName}");
 
+            // 添加调试信息
+            var configPath = Path.Combine(pluginFolder, "plugin.json");
+            Logger.Info($"检查配置文件路径: {configPath}, 文件是否存在: {File.Exists(configPath)}");
+            
             var pluginConfig = LoadPluginConfig(pluginFolder);
+            
+            // 添加调试信息
+            Logger.Info($"加载的插件配置名称: {pluginConfig.Name}");
+
+            if (!pluginConfig.Enabled)
+            {
+                Logger.Info($"插件 {folderName} 已被禁用，跳过扫描");
+                return;
+            }
 
             if (!pluginConfig.Enabled)
             {

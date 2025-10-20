@@ -16,6 +16,8 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Toolbox.Core;
+using Ude;
 
 namespace TempBatch
 {
@@ -58,7 +60,9 @@ namespace TempBatch
         private DataGrid _previewDataGrid;
         private TextBlock _statusText;
         private ProgressBar _generationProgressBar;
-        private Button _cancelButton;
+        private TextBlock _progressText;
+        private Grid _progressBarContainer;
+        private ScrollViewer _mainScrollViewer;
 
         public TempBatchControl()
         {
@@ -84,7 +88,9 @@ namespace TempBatch
             _previewDataGrid = FindName("PreviewDataGrid") as DataGrid;
             _statusText = FindName("StatusText") as TextBlock;
             _generationProgressBar = FindName("GenerationProgressBar") as ProgressBar;
-            _cancelButton = FindName("CancelButton") as Button;
+            _progressText = FindName("ProgressText") as TextBlock;
+            _progressBarContainer = FindName("ProgressBarContainer") as Grid;
+            _mainScrollViewer = FindName("MainScrollViewer") as ScrollViewer;
 
             // 检查关键控件是否存在
             CheckRequiredControls();
@@ -99,6 +105,10 @@ namespace TempBatch
             if (_parameterMappingPanel == null) missingControls.Add("ParameterMappingPanel");
             if (_filePathTextBox == null) missingControls.Add("FilePathTextBox");
             if (_sheetComboBox == null) missingControls.Add("SheetComboBox");
+            if (_generationProgressBar == null) missingControls.Add("GenerationProgressBar");
+            if (_progressText == null) missingControls.Add("ProgressText");
+            if (_progressBarContainer == null) missingControls.Add("ProgressBarContainer");
+            if (_mainScrollViewer == null) missingControls.Add("MainScrollViewer");
 
             if (missingControls.Count > 0)
             {
@@ -121,7 +131,9 @@ namespace TempBatch
                     _previewDataGrid.CanUserResizeColumns = true;
                     _previewDataGrid.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
                     _previewDataGrid.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
-                    _previewDataGrid.MaxHeight = 500;
+                    _previewDataGrid.Height = 200;
+                    _previewDataGrid.MinHeight = 150;
+                    _previewDataGrid.MaxHeight = 250;
                 }
 
                 if (_parameterMappingPanel != null && _noParametersText != null && !_parameterMappingPanel.Children.Contains(_noParametersText))
@@ -129,8 +141,44 @@ namespace TempBatch
                     _parameterMappingPanel.Children.Add(_noParametersText);
                 }
 
+                // 确保滚动条在顶部
+                // 使用Dispatcher在布局完成后滚动到顶部
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    ScrollToTop();
+                }), DispatcherPriority.Loaded);
+
                 UpdateStatus("就绪 - 请选择Excel文件和模板文件开始");
             };
+        }
+
+        // 新增：专门的滚动到顶部方法
+        private void ScrollToTop()
+        {
+            // 确保在UI线程执行
+            if (!_uiDispatcher.CheckAccess())
+            {
+                _uiDispatcher.Invoke(() => ScrollToTop());
+                return;
+            }
+
+            if (_mainScrollViewer != null)
+            {
+                _mainScrollViewer.ScrollToTop();
+                System.Diagnostics.Debug.WriteLine("滚动到顶部已执行");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("MainScrollViewer为null，无法滚动到顶部");
+
+                // 尝试重新查找ScrollViewer
+                _mainScrollViewer = FindName("MainScrollViewer") as ScrollViewer;
+                if (_mainScrollViewer != null)
+                {
+                    _mainScrollViewer.ScrollToTop();
+                    System.Diagnostics.Debug.WriteLine("重新找到ScrollViewer并滚动到顶部");
+                }
+            }
         }
 
         #region 事件处理
@@ -210,6 +258,7 @@ namespace TempBatch
                 catch (Exception ex)
                 {
                     UpdateStatus($"读取模板文件失败：{ex.Message}");
+                    Logger.Error($"读取模板文件失败：{ex.Message}", ex);
                     return;
                 }
 
@@ -228,6 +277,7 @@ namespace TempBatch
                 catch (ArgumentException ex)
                 {
                     UpdateStatus($"正则表达式错误：{ex.Message}");
+                    Logger.Error($"正则表达式错误：{ex.Message}", ex);
                     return;
                 }
 
@@ -259,6 +309,7 @@ namespace TempBatch
                 catch (ArgumentException ex)
                 {
                     UpdateStatus($"文件名格式正则表达式错误：{ex.Message}");
+                    Logger.Error($"文件名格式正则表达式错误：{ex.Message}", ex);
                     return;
                 }
 
@@ -277,6 +328,7 @@ namespace TempBatch
             catch (Exception ex)
             {
                 UpdateStatus($"参数解析失败: {ex.Message}");
+                Logger.Error($"参数解析失败: {ex.Message}", ex);
                 System.Diagnostics.Debug.WriteLine($"参数解析异常详情: {ex.ToString()}");
             }
         }
@@ -300,15 +352,20 @@ namespace TempBatch
             if (generateButton != null)
                 generateButton.IsEnabled = false;
 
+            // 显示进度条
+            if (_progressBarContainer != null)
+            {
+                _progressBarContainer.Visibility = Visibility.Visible;
+            }
+
             if (_generationProgressBar != null)
             {
-                _generationProgressBar.Visibility = Visibility.Visible;
                 _generationProgressBar.Value = 0;
             }
 
-            if (_cancelButton != null)
+            if (_progressText != null)
             {
-                _cancelButton.Visibility = Visibility.Visible;
+                _progressText.Text = "准备生成...";
             }
 
             try
@@ -355,21 +412,13 @@ namespace TempBatch
             catch (Exception ex)
             {
                 UpdateStatus($"生成文件时发生错误: {ex.Message}");
+                Logger.Error($"生成文件时发生错误: {ex.Message}", ex);
                 System.Diagnostics.Debug.WriteLine($"生成文件异常详情: {ex.ToString()}");
             }
             finally
             {
                 _isGenerating = false;
                 ResetGenerationUI(generateButton);
-            }
-        }
-
-        private void CancelButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
-            {
-                _cancellationTokenSource.Cancel();
-                UpdateStatus("正在取消文件生成...");
             }
         }
 
@@ -411,16 +460,28 @@ namespace TempBatch
             _excelParamGlobalPosition.Clear(); // 清除全局位置追踪器
             _fileNameParameters.Clear();
 
+            // 隐藏进度条
+            if (_progressBarContainer != null)
+            {
+                _progressBarContainer.Visibility = Visibility.Collapsed;
+            }
+
             if (_generationProgressBar != null)
             {
-                _generationProgressBar.Visibility = Visibility.Collapsed;
                 _generationProgressBar.Value = 0;
             }
 
-            if (_cancelButton != null)
+            if (_progressText != null)
             {
-                _cancelButton.Visibility = Visibility.Collapsed;
+                _progressText.Text = "准备生成...";
             }
+
+            // 确保滚动条在顶部
+            // 使用Dispatcher确保在UI更新后滚动到顶部
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                ScrollToTop();
+            }), DispatcherPriority.Loaded);
 
             UpdateStatus("已清空所有配置");
         }
@@ -474,6 +535,7 @@ namespace TempBatch
                     else if (data == null)
                     {
                         UpdateStatus($"读取Excel数据失败: {errorMsg}");
+                        Logger.Error($"读取Excel数据失败: {errorMsg}");
                         return;
                     }
 
@@ -493,8 +555,8 @@ namespace TempBatch
                                 _excelDataTable.Columns.Add(columnName);
                             }
 
-                            // 限制预览行数，防止大数据量卡顿
-                            int rowsToAdd = Math.Min(500, _excelData.Count);
+                            // 限制预览行数，最多显示200行
+                            int rowsToAdd = Math.Min(200, _excelData.Count);
                             for (int i = 0; i < rowsToAdd; i++)
                             {
                                 DataRow row = _excelDataTable.NewRow();
@@ -514,7 +576,7 @@ namespace TempBatch
                     UpdateExcelColumnCombos();
 
                     // 显示成功信息
-                    UpdateStatus($"成功加载Sheet: {sheetName}，共 {_excelData.Count} 行数据，{_excelColumnNames.Count} 列");
+                    UpdateStatus($"成功加载Sheet: {sheetName}，共 {_excelData.Count} 行数据，{_excelColumnNames.Count} 列（预览显示前 {Math.Min(200, _excelData.Count)} 行）");
                 });
             }, cancellationSource.Token).ContinueWith(task =>
             {
@@ -523,6 +585,7 @@ namespace TempBatch
                     _uiDispatcher.Invoke(() =>
                     {
                         UpdateStatus($"加载Sheet时发生错误: {task.Exception?.InnerException?.Message}");
+                        Logger.Error($"加载Sheet时发生错误: {task.Exception?.InnerException?.Message}", task.Exception);
                         System.Diagnostics.Debug.WriteLine($"加载Sheet异常: {task.Exception?.ToString()}");
                     });
                 }
@@ -668,12 +731,14 @@ namespace TempBatch
                 _uiDispatcher.Invoke(() =>
                     UpdateStatus($"文件IO错误: 可能文件已被打开 - {ex.Message}")
                 );
+                Logger.Error($"文件IO错误: 可能文件已被打开 - {ex.Message}", ex);
             }
             catch (Exception ex)
             {
                 _uiDispatcher.Invoke(() =>
                     UpdateStatus($"加载Sheet名称失败: {ex.Message}")
                 );
+                Logger.Error($"加载Sheet名称失败: {ex.Message}", ex);
                 System.Diagnostics.Debug.WriteLine($"加载Sheet名称异常: {ex.ToString()}");
             }
         }
@@ -1036,14 +1101,132 @@ namespace TempBatch
             return value ?? string.Empty; // 确保不会返回null
         }
 
+        // 使用Ude库改进文件编码检测
         private Encoding GetFileEncoding(string filePath)
         {
-            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
-            using (var reader = new StreamReader(stream, true))
+            try
             {
-                reader.ReadToEnd();
-                return reader.CurrentEncoding;
+                // 首先检查BOM（字节顺序标记）
+                byte[] buffer = new byte[4096];
+                using (var file = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                {
+                    int bytesRead = file.Read(buffer, 0, buffer.Length);
+
+                    // 检测BOM
+                    if (bytesRead >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+                        return Encoding.UTF8;
+                    if (bytesRead >= 2 && buffer[0] == 0xFE && buffer[1] == 0xFF)
+                        return Encoding.BigEndianUnicode;
+                    if (bytesRead >= 2 && buffer[0] == 0xFF && buffer[1] == 0xFE)
+                        return Encoding.Unicode;
+                    if (bytesRead >= 4 && buffer[0] == 0x00 && buffer[1] == 0x00 && buffer[2] == 0xFE && buffer[3] == 0xFF)
+                        return Encoding.UTF32;
+                    if (bytesRead >= 4 && buffer[0] == 0xFF && buffer[1] == 0xFE && buffer[2] == 0x00 && buffer[3] == 0x00)
+                        return Encoding.UTF32;
+
+                    // 如果没有BOM，使用Ude库检测编码
+                    if (bytesRead > 0)
+                    {
+                        var detector = new CharsetDetector();
+                        detector.Feed(buffer, 0, bytesRead);
+                        detector.DataEnd();
+
+                        if (detector.Charset != null)
+                        {
+                            string charset = detector.Charset.ToUpperInvariant();
+                            System.Diagnostics.Debug.WriteLine($"Ude检测到编码: {charset}, 置信度: {detector.Confidence}");
+
+                            // 映射常见的字符集到Encoding
+                            switch (charset)
+                            {
+                                case "UTF-8":
+                                    return Encoding.UTF8;
+                                case "UTF-16LE":
+                                    return Encoding.Unicode;
+                                case "UTF-16BE":
+                                    return Encoding.BigEndianUnicode;
+                                case "WINDOWS-1252":
+                                case "ISO-8859-1":
+                                    return Encoding.GetEncoding(1252);
+                                case "GB18030":
+                                    return Encoding.GetEncoding(54936);
+                                case "GB2312":
+                                    return Encoding.GetEncoding(936);
+                                case "BIG5":
+                                    return Encoding.GetEncoding(950);
+                                case "SHIFT_JIS":
+                                    return Encoding.GetEncoding(932);
+                                case "EUC-JP":
+                                    return Encoding.GetEncoding(51932);
+                                case "EUC-KR":
+                                    return Encoding.GetEncoding(51949);
+                                case "ISO-8859-2":
+                                    return Encoding.GetEncoding(28592);
+                                case "ISO-8859-5":
+                                    return Encoding.GetEncoding(28595);
+                                case "ISO-8859-7":
+                                    return Encoding.GetEncoding(28597);
+                                case "ISO-8859-8":
+                                    return Encoding.GetEncoding(28598);
+                                case "WINDOWS-1250":
+                                    return Encoding.GetEncoding(1250);
+                                case "WINDOWS-1251":
+                                    return Encoding.GetEncoding(1251);
+                                case "WINDOWS-1253":
+                                    return Encoding.GetEncoding(1253);
+                                case "WINDOWS-1254":
+                                    return Encoding.GetEncoding(1254);
+                                case "WINDOWS-1255":
+                                    return Encoding.GetEncoding(1255);
+                                case "WINDOWS-1256":
+                                    return Encoding.GetEncoding(1256);
+                                case "WINDOWS-1257":
+                                    return Encoding.GetEncoding(1257);
+                                case "WINDOWS-1258":
+                                    return Encoding.GetEncoding(1258);
+                                default:
+                                    // 尝试直接使用字符集名称获取编码
+                                    try
+                                    {
+                                        return Encoding.GetEncoding(charset);
+                                    }
+                                    catch
+                                    {
+                                        // 如果失败，继续后续检测
+                                    }
+                                    break;
+                            }
+                        }
+                    }
+                }
+
+                // 如果Ude检测失败，尝试系统默认编码
+                try
+                {
+                    // 注册编码提供程序以支持更多编码
+                    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                    return Encoding.GetEncoding(0); // 获取系统默认ANSI编码
+                }
+                catch
+                {
+                    // 如果失败，回退到UTF-8
+                    return Encoding.UTF8;
+                }
             }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"检测文件编码失败: {ex.Message}");
+                // 默认返回UTF-8
+                return Encoding.UTF8;
+            }
+        }
+
+        // 新增：同时读取文件内容和编码
+        private (string content, Encoding encoding) ReadFileWithEncoding(string filePath)
+        {
+            Encoding encoding = GetFileEncoding(filePath);
+            string content = File.ReadAllText(filePath, encoding);
+            return (content, encoding);
         }
 
         private string ReplaceFirstOccurrence(string source, string find, string replace)
@@ -1074,31 +1257,28 @@ namespace TempBatch
             _statusText.BringIntoView();
         }
 
-        private void UpdateProgress(int value)
+        private void UpdateProgress(int value, int currentFile, int totalFiles, string fileName = "")
         {
             // 确保在UI线程执行
             if (!_uiDispatcher.CheckAccess())
             {
-                _uiDispatcher.Invoke(() => UpdateProgress(value));
+                _uiDispatcher.Invoke(() => UpdateProgress(value, currentFile, totalFiles, fileName));
                 return;
             }
 
-            if (_generationProgressBar == null) return;
-
-            _generationProgressBar.Value = value;
-        }
-
-        private void ShowError(string message)
-        {
-            // 确保在UI线程执行
-            if (!_uiDispatcher.CheckAccess())
+            if (_generationProgressBar != null)
             {
-                _uiDispatcher.Invoke(() => ShowError(message));
-                return;
+                _generationProgressBar.Value = value;
             }
 
-            MessageBox.Show(message, "错误", MessageBoxButton.OK, MessageBoxImage.Error);
-            System.Diagnostics.Debug.WriteLine($"错误: {message}");
+            if (_progressText != null)
+            {
+                string progressInfo = string.IsNullOrEmpty(fileName)
+                    ? $"正在生成文件... ({currentFile}/{totalFiles})"
+                    : $"正在生成: {fileName} ({currentFile}/{totalFiles})";
+
+                _progressText.Text = $"{progressInfo} - {value}%";
+            }
         }
 
         private static bool IsTextAllowed(string text)
@@ -1193,7 +1373,7 @@ namespace TempBatch
                     if (dataRowIndex < 0 || dataRowIndex >= excelData.Count)
                     {
                         skipExcelRow = true;
-                        UpdateStatus($"警告：参数 {config.ParamName} 的行索引 {dataRowIndex} 超出范围，使用空值替换");
+                        //UpdateStatus($"警告：参数 {config.ParamName} 的行索引 {dataRowIndex} 超出范围，使用空值替换");
                         return config.EmptyValue;
                     }
 
@@ -1201,7 +1381,7 @@ namespace TempBatch
                     if (config.ExcelColumnIndex < 0 || config.ExcelColumnIndex >= excelData[dataRowIndex].Count)
                     {
                         skipExcelRow = true;
-                        UpdateStatus($"警告：参数 {config.ParamName} 的列索引 {config.ExcelColumnIndex} 超出范围，使用空值替换");
+                        //UpdateStatus($"警告：参数 {config.ParamName} 的列索引 {config.ExcelColumnIndex} 超出范围，使用空值替换");
                         return config.EmptyValue;
                     }
 
@@ -1211,7 +1391,7 @@ namespace TempBatch
                     if (string.IsNullOrWhiteSpace(value) && !string.IsNullOrEmpty(config.EmptyValue))
                     {
                         skipExcelRow = true;
-                        UpdateStatus($"参数 {config.ParamName} 在行 {dataRowIndex + 1} 为空，使用替换值");
+                        //UpdateStatus($"参数 {config.ParamName} 在行 {dataRowIndex + 1} 为空，使用替换值");
                     }
                     break;
 
@@ -1230,13 +1410,13 @@ namespace TempBatch
                         else
                         {
                             value = "格式错误";
-                            UpdateStatus($"警告：参数 {config.ParamName} 的变值格式错误");
+                            //UpdateStatus($"警告：参数 {config.ParamName} 的变值格式错误");
                         }
                     }
                     else
                     {
                         value = "格式错误";
-                        UpdateStatus($"警告：参数 {config.ParamName} 的变值格式错误");
+                        //UpdateStatus($"警告：参数 {config.ParamName} 的变值格式错误");
                     }
                     break;
             }
@@ -1277,14 +1457,19 @@ namespace TempBatch
             if (generateButton != null)
                 generateButton.IsEnabled = true;
 
-            if (_generationProgressBar != null)
+            if (_progressBarContainer != null)
             {
-                _generationProgressBar.Visibility = Visibility.Collapsed;
+                _progressBarContainer.Visibility = Visibility.Collapsed;
             }
 
-            if (_cancelButton != null)
+            if (_generationProgressBar != null)
             {
-                _cancelButton.Visibility = Visibility.Collapsed;
+                _generationProgressBar.Value = 0;
+            }
+
+            if (_progressText != null)
+            {
+                _progressText.Text = "准备生成...";
             }
         }
         #endregion
@@ -1414,6 +1599,7 @@ namespace TempBatch
                 if (paramConfigResult.Configs == null || !string.IsNullOrEmpty(paramConfigResult.ErrorMessage))
                 {
                     UpdateStatus($"参数配置解析失败：{paramConfigResult.ErrorMessage}");
+                    Logger.Error($"参数配置解析失败：{paramConfigResult.ErrorMessage}");
                     return;
                 }
 
@@ -1433,6 +1619,7 @@ namespace TempBatch
                     if (_excelData == null)
                     {
                         UpdateStatus($"读取Excel数据失败：{errorMsg}");
+                        Logger.Error($"读取Excel数据失败：{errorMsg}");
                         return;
                     }
                 }
@@ -1460,9 +1647,21 @@ namespace TempBatch
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // 读取模板文件内容和编码（每次生成文件都使用原始模板，避免累积替换）
-                string originalTemplateContent = File.ReadAllText(templateFilePath);
-                var templateEncoding = GetFileEncoding(templateFilePath);
+                // 读取模板文件内容和编码（使用改进的方法确保编码一致）
+                string originalTemplateContent;
+                Encoding templateEncoding;
+                try
+                {
+                    (originalTemplateContent, templateEncoding) = ReadFileWithEncoding(templateFilePath);
+                    UpdateStatus($"检测到模板文件编码: {templateEncoding.EncodingName} ({templateEncoding.WebName})");
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus($"读取模板文件失败：{ex.Message}");
+                    Logger.Error($"读取模板文件失败：{ex.Message}", ex);
+                    return;
+                }
+
                 int successCount = 0;
                 var mergedContent = new StringBuilder();
 
@@ -1508,7 +1707,7 @@ namespace TempBatch
                         if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
                         {
                             paramOccurrence = 1; // 使用默认值
-                            UpdateStatus($"警告：参数 {config.ParamName} 不在出现次数字典中，使用默认值1");
+                            //UpdateStatus($"警告：参数 {config.ParamName} 不在出现次数字典中，使用默认值1");
                         }
 
                         for (int occurrenceIndex = 0; occurrenceIndex < paramOccurrence; occurrenceIndex++)
@@ -1518,7 +1717,7 @@ namespace TempBatch
                             if (!_paramBaseStartRows.TryGetValue(config.ParamName, out int paramBaseRow))
                             {
                                 paramBaseRow = 0; // 使用默认值
-                                UpdateStatus($"警告：参数 {config.ParamName} 不在起始行字典中，使用默认值0");
+                                //UpdateStatus($"警告：参数 {config.ParamName} 不在起始行字典中，使用默认值0");
                             }
 
                             string paramValue = GenerateParamValue(
@@ -1568,12 +1767,13 @@ namespace TempBatch
                     try
                     {
                         // 即使所有参数都为空，也生成文件（包含原始模板内容）
+                        // 使用模板文件的原始编码写入
                         File.WriteAllText(outputPath, currentContent, templateEncoding);
                         successCount++;
 
                         if (mergeFiles)
                         {
-                            mergedContent.AppendLine($"===== {fileName} =====");
+                            //mergedContent.AppendLine($"===== {fileName} =====");
                             mergedContent.AppendLine(currentContent);
                             mergedContent.AppendLine();
                         }
@@ -1581,7 +1781,7 @@ namespace TempBatch
                         // 更新进度
                         _generatedFileCount++;
                         int progress = (int)((double)_generatedFileCount / _totalFileCount * 100);
-                        UpdateProgress(progress);
+                        UpdateProgress(progress, _generatedFileCount, _totalFileCount, fileName);
 
                         // 状态信息
                         if (allParamsEmpty)
@@ -1599,6 +1799,7 @@ namespace TempBatch
                     catch (Exception ex)
                     {
                         UpdateStatus($"生成文件 {fileName} 失败: {ex.Message}");
+                        Logger.Error($"生成文件 {fileName} 失败: {ex.Message}", ex);
                     }
 
                     // 短暂延迟，让UI有机会更新
@@ -1616,12 +1817,14 @@ namespace TempBatch
 
                     try
                     {
+                        // 使用模板文件的原始编码写入合并文件
                         File.WriteAllText(mergeFilePath, mergedContent.ToString(), templateEncoding);
                         UpdateStatus($"生成合并文件: {mergeFileName}");
                     }
                     catch (Exception ex)
                     {
                         UpdateStatus($"生成合并文件失败: {ex.Message}");
+                        Logger.Error($"生成合并文件失败: {ex.Message}", ex);
                     }
                 }
 
@@ -1640,6 +1843,7 @@ namespace TempBatch
             catch (Exception ex)
             {
                 UpdateStatus($"生成文件时发生错误: {ex.Message}");
+                Logger.Error($"生成文件时发生错误: {ex.Message}", ex);
                 System.Diagnostics.Debug.WriteLine($"生成文件异常详情: {ex.ToString()}");
             }
         }
@@ -1810,6 +2014,7 @@ namespace TempBatch
             catch (Exception ex)
             {
                 errorMsg = ex.Message;
+                Logger.Error($"读取Excel数据异常: {ex.Message}", ex);
                 System.Diagnostics.Debug.WriteLine($"读取Excel数据异常: {ex.ToString()}");
                 return null;
             }
@@ -1882,7 +2087,7 @@ namespace TempBatch
                         skipExcelRow = !string.IsNullOrEmpty(config.EmptyValue);
                         if (skipExcelRow)
                         {
-                            UpdateStatus($"参数 {config.ParamName} 在行 {dataRowIndex + 1} 列 {config.ExcelColumnIndex + 1} 的值为空，使用替换值");
+                            //UpdateStatus($"参数 {config.ParamName} 在行 {dataRowIndex + 1} 列 {config.ExcelColumnIndex + 1} 的值为空，使用替换值");
                         }
                         else
                         {
@@ -1897,7 +2102,7 @@ namespace TempBatch
                         // 无论是否为空，都递增位置，确保顺序正确
                         int currentPos = _excelParamGlobalPosition[config.ParamName];
                         _excelParamGlobalPosition[config.ParamName] = currentPos + 1;
-                        UpdateStatus($"参数 {config.ParamName}（顺序填写）使用行 {dataRowIndex + 1}，下次将使用行 {currentPos + 2}");
+                        //UpdateStatus($"参数 {config.ParamName}（顺序填写）使用行 {dataRowIndex + 1}，下次将使用行 {currentPos + 2}");
                     }
                     else if (config.ExcelMode != "整个文件使用同一行" && !skipExcelRow)
                     {

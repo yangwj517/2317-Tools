@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Toolbox.Core;
 
-namespace Toolbox.Core.TestPlugin
+namespace TestPlugin
 {
     public class TestPlugin1 : IPlugin
     {
