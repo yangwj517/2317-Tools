@@ -19,7 +19,9 @@
 
 ## Plugin格式
 * Plugin的csproj格式如下：
-* <Project Sdk="Microsoft.NET.Sdk">
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
@@ -31,4 +33,5 @@
   </ItemGroup>
 
 </Project>
-*更改格式后重新编译，并把dll文件复制到plugins文件夹即可
+```
+* 更改格式后重新编译，并把dll文件复制到plugins文件夹即可
