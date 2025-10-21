@@ -15,4 +15,20 @@
 
 ##  StatsBatch 
 
-* stasts 文件转EXCEL 
+* stasts 文件转EXCEL
+
+## Plugin格式
+* Plugin的csproj格式如下：
+* <Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Toolbox.Core.csproj" />
+  </ItemGroup>
+
+</Project>
+*更改格式后重新编译，并把dll文件复制到plugins文件夹即可
