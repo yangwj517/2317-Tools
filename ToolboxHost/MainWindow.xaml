@@ -18,13 +18,23 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Foreground" Value="Gray"/>
         </Style>
+        <!-- 改进的菜单项样式 -->
+        <Style x:Key="RefreshMenuItemStyle" TargetType="MenuItem">        <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="LightBlue"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="LightBlue"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <DockPanel>
         <!-- 顶部菜单栏 -->
         <Menu DockPanel.Dock="Top" Background="WhiteSmoke">
             <!-- 将刷新按钮放在最前面 -->
-            <MenuItem Header="刷新(_R)" Click="RefreshPluginList_Click"/>
+            <MenuItem Header="刷新(_R)" Click="RefreshPluginList_Click" Style="{StaticResource RefreshMenuItemStyle}"/>
 
             <MenuItem Header="文件(_F)">
                 <MenuItem Header="导入新插件" Click="ImportNewPlugin_Click"/>

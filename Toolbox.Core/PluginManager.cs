@@ -298,21 +298,48 @@ namespace Toolbox.Core
             loadContext.ShadowCopiedDllPath = shadowCopiedDllPath;
 
             var assemblyLoader = new PluginAssemblyLoader(pluginFolder);
-            var assembly = assemblyLoader.LoadFromAssemblyPath(shadowCopiedDllPath);
+            Assembly assembly;
+            try
+            {
+                assembly = assemblyLoader.LoadFromAssemblyPath(shadowCopiedDllPath);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"加载程序集失败: {shadowCopiedDllPath}", ex);
+                DeleteShadowCopyFiles(loadContext);
+                return null;
+            }
+            
             loadContext.Assembly = assembly;
 
-            foreach (Type type in assembly.GetTypes())
+            try
             {
-                if (typeof(IPlugin).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+                foreach (Type type in assembly.GetTypes())
                 {
-                    Logger.Info($"找到插件类型: {type.FullName}");
+                    if (typeof(IPlugin).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+                    {
+                        Logger.Info($"找到插件类型: {type.FullName}");
 
-                    IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
-                    plugin.Initialize();
+                        IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
+                        plugin.Initialize();
 
-                    Logger.Info($"插件加载成功: {plugin.Name} v{plugin.Version}");
-                    return plugin;
+                        Logger.Info($"插件加载成功: {plugin.Name} v{plugin.Version}");
+                        return plugin;
+                    }
                 }
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                Logger.Error($"反射加载类型失败: {shadowCopiedDllPath}", ex);
+                if (ex.LoaderExceptions != null)
+                {
+                    foreach (var loaderEx in ex.LoaderExceptions)
+                    {
+                        Logger.Error($"加载异常详情: {loaderEx.Message}", loaderEx);
+                    }
+                }
+                DeleteShadowCopyFiles(loadContext);
+                return null;
             }
 
             Logger.Warning($"在 {Path.GetFileName(pluginDllPath)} 中未找到实现IPlugin接口的类型");
@@ -326,8 +353,7 @@ namespace Toolbox.Core
             return null;
         }
     }
-
-        
+    
         private void LoadPluginFromFolder(string pluginFolder)
         {
             var folderName = Path.GetFileName(pluginFolder);
@@ -479,28 +505,48 @@ namespace Toolbox.Core
                 try
                 {
                     var assemblyName = new AssemblyName(args.Name);
-                    var assemblyPath = Path.Combine(_pluginFolder, assemblyName.Name + ".dll");
-                    if (File.Exists(assemblyPath))
+                    
+                    // 忽略版本号，只根据名称查找
+                    string simpleName = assemblyName.Name;
+                    
+                    // 首先在插件文件夹中查找
+                    var pluginDllPath = Path.Combine(_pluginFolder, simpleName + ".dll");
+                    if (File.Exists(pluginDllPath))
                     {
-                        return Assembly.LoadFrom(assemblyPath);
+                        Logger.Info($"从插件目录加载: {simpleName}");
+                        return Assembly.LoadFrom(pluginDllPath);
                     }
 
+                    // 在依赖目录中查找
                     if (Directory.Exists(_dependenciesPath))
                     {
-                        assemblyPath = Path.Combine(_dependenciesPath, assemblyName.Name + ".dll");
-                        if (File.Exists(assemblyPath))
+                        var depDllPath = Path.Combine(_dependenciesPath, simpleName + ".dll");
+                        if (File.Exists(depDllPath))
                         {
-                            return Assembly.LoadFrom(assemblyPath);
+                            Logger.Info($"从依赖目录加载: {simpleName}");
+                            return Assembly.LoadFrom(depDllPath);
                         }
 
+                        // 查找所有dll文件，匹配名称
                         var dllFiles = Directory.GetFiles(_dependenciesPath, "*.dll");
                         foreach (var dllFile in dllFiles)
                         {
                             var fileName = Path.GetFileNameWithoutExtension(dllFile);
-                            if (fileName.StartsWith(assemblyName.Name))
+                            if (fileName.Equals(simpleName, StringComparison.OrdinalIgnoreCase))
                             {
+                                Logger.Info($"从依赖目录匹配加载: {simpleName}");
                                 return Assembly.LoadFrom(dllFile);
                             }
+                        }
+                    }
+                    
+                    // 尝试从应用程序域中查找已加载的程序集
+                    foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        if (assembly.FullName == args.Name)
+                        {
+                            Logger.Info($"从已加载程序集中找到: {assemblyName}");
+                            return assembly;
                         }
                     }
                 }
@@ -935,6 +981,10 @@ namespace Toolbox.Core
                 {
                     _allShadowCopiedPaths.Remove(loadContext.ShadowCopiedDllPath);
                 }
+                
+                // 强制垃圾回收以释放可能的文件句柄
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
 
                 // 多次尝试删除文件
                 int retryCount = 0;
@@ -949,10 +999,17 @@ namespace Toolbox.Core
                         }
                         deleted = true;
                     }
-                    catch (IOException)
+                    catch (IOException ex)
                     {
+                        Logger.Warning($"删除文件时遇到IO异常，重试中... ({retryCount + 1}/10): {ex.Message}");
                         retryCount++;
-                        System.Threading.Thread.Sleep(100);
+                        System.Threading.Thread.Sleep(200); // 增加等待时间
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        Logger.Warning($"删除文件时遇到权限异常，重试中... ({retryCount + 1}/10): {ex.Message}");
+                        retryCount++;
+                        System.Threading.Thread.Sleep(200);
                     }
                 }
 
