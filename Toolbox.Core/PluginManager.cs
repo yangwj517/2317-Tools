@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Toolbox.Core
 {
@@ -107,6 +110,7 @@ namespace Toolbox.Core
         // }
 
         // 新增方法：只扫描插件配置，不加载程序集
+        // 在 PluginManager.ScanAllPlugins 中添加并行处理
         public void ScanAllPlugins()
         {
             Logger.Info($"开始扫描插件目录: {_pluginsRootDirectory}");
@@ -118,40 +122,36 @@ namespace Toolbox.Core
                 return;
             }
             
-            // 列出所有目录（包括隐藏目录）
-            var allDirs = Directory.GetDirectories(_pluginsRootDirectory);
-            Logger.Info($"插件根目录下所有文件夹数量: {allDirs.Length}");
-    
-            foreach (var dir in allDirs)
-            {
-                var dirInfo = new DirectoryInfo(dir);
-                Logger.Info($"发现文件夹: {dirInfo.Name}, 全路径: {dir}, 属性: {dirInfo.Attributes}");
-            }
-            
             var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory).ToList();
-
-            // var pluginFolders = Directory.GetDirectories(_pluginsRootDirectory)
-            //     .Where(folder => !new DirectoryInfo(folder).Attributes.HasFlag(FileAttributes.Hidden))
-            //     .ToList();
-
             Logger.Info($"找到 {pluginFolders.Count} 个插件文件夹");
 
-            foreach (var pluginFolder in pluginFolders)
+            // 优化：使用并行处理提高扫描速度
+            var exceptions = new ConcurrentBag<Exception>();
+            var scannedCount = 0;
+            
+            Parallel.ForEach(pluginFolders, pluginFolder =>
             {
                 try
                 {
                     ScanPluginFromFolder(pluginFolder);
+                    Interlocked.Increment(ref scannedCount);
                 }
                 catch (Exception ex)
                 {
                     Logger.Error($"扫描插件失败 {Path.GetFileName(pluginFolder)}", ex);
+                    exceptions.Add(ex);
                 }
-            }
+            });
 
-            Logger.Info($"插件扫描完成，共扫描 {_pluginMetadata.Count} 个插件");
+            Logger.Info($"插件扫描完成，共扫描 {scannedCount} 个插件");
+            
+            if (!exceptions.IsEmpty)
+            {
+                Logger.Warning($"扫描过程中遇到 {exceptions.Count} 个异常");
+            }
         }
 
-// 新增方法：扫描单个插件配置
+        // 新增方法：扫描单个插件配置
         private void ScanPluginFromFolder(string pluginFolder)
         {
             var folderName = Path.GetFileName(pluginFolder);
@@ -201,158 +201,165 @@ namespace Toolbox.Core
         }
 
         // 新增方法：按需加载指定插件
-    public IPlugin LoadPlugin(string pluginName)
-    {
-        if (!_pluginMetadata.TryGetValue(pluginName, out var metadata))
+        // 在 PluginManager 中添加线程安全的锁机制
+        private readonly object _pluginsLock = new object();
+        private readonly object _metadataLock = new object();
+        // 在关键方法中使用锁
+        public IPlugin LoadPlugin(string pluginName)
         {
-            Logger.Warning($"未找到插件元数据: {pluginName}");
-            return null;
-        }
-
-        // 如果已经加载，直接返回实例
-        if (metadata.State == PluginState.Loaded && metadata.Instance != null)
-        {
-            return metadata.Instance;
-        }
-
-        // 执行实际加载逻辑
-        var pluginInstance = LoadPluginFromMetadata(metadata);
-        if (pluginInstance != null)
-        {
-            metadata.Instance = pluginInstance;
-            metadata.State = PluginState.Loaded;
-            _plugins.Add(pluginInstance);
-            _pluginConfigs[pluginInstance] = metadata.Info;
-            _pluginLoadContexts[pluginInstance] = _scannedPluginContexts[pluginName];
-            PluginLoaded?.Invoke(pluginInstance, metadata.Info);
-        }
-
-        return pluginInstance;
-    }
-
-    // 修改原有的 LoadPluginFromFolder 方法为 LoadPluginFromMetadata
-    private IPlugin LoadPluginFromMetadata(PluginMetadata metadata)
-    {
-        var pluginFolder = metadata.FolderPath;
-        var folderName = Path.GetFileName(pluginFolder);
-        Logger.Info($"加载插件: {folderName}");
-
-        SetupPluginDependencyResolution(pluginFolder);
-
-        var expectedDllName = $"{folderName}.dll";
-        var pluginDllPath = Path.Combine(pluginFolder, expectedDllName);
-
-        if (!File.Exists(pluginDllPath))
-        {
-            var dllFiles = Directory.GetFiles(pluginFolder, "*.dll");
-            if (dllFiles.Length == 0)
+            lock (_pluginsLock)
             {
-                Logger.Warning($"在文件夹 {folderName} 中未找到DLL文件");
-                return null;
-            }
-            pluginDllPath = dllFiles[0];
-            Logger.Info($"使用找到的DLL: {Path.GetFileName(pluginDllPath)}");
-        }
-
-        string tempShadowDir = Path.Combine(Path.GetTempPath(), "ToolboxPluginShadow",
-            $"{folderName}_{Guid.NewGuid()}");
-        Directory.CreateDirectory(tempShadowDir);
-
-        string shadowCopiedDllPath = Path.Combine(tempShadowDir, Path.GetFileName(pluginDllPath));
-
-        try
-        {
-            bool copySuccess = false;
-            int retryCount = 0;
-            while (!copySuccess && retryCount < 5)
-            {
-                try
+                if (!_pluginMetadata.TryGetValue(pluginName, out var metadata))
                 {
-                    if (File.Exists(shadowCopiedDllPath))
-                    {
-                        File.Delete(shadowCopiedDllPath);
-                    }
-                    File.Copy(pluginDllPath, shadowCopiedDllPath, true);
-                    copySuccess = true;
+                    Logger.Warning($"未找到插件元数据: {pluginName}");
+                    return null;
                 }
-                catch (IOException)
+
+                // 如果已经加载，直接返回实例
+                if (metadata.State == PluginState.Loaded && metadata.Instance != null)
                 {
-                    retryCount++;
-                    System.Threading.Thread.Sleep(100);
+                    return metadata.Instance;
                 }
-            }
 
-            if (!copySuccess)
+                // 执行实际加载逻辑
+                var pluginInstance = LoadPluginFromMetadata(metadata);
+                if (pluginInstance != null)
+                {
+                    metadata.Instance = pluginInstance;
+                    metadata.State = PluginState.Loaded;
+                    _plugins.Add(pluginInstance);
+                    _pluginConfigs[pluginInstance] = metadata.Info;
+                    _pluginLoadContexts[pluginInstance] = _scannedPluginContexts[pluginName];
+                    PluginLoaded?.Invoke(pluginInstance, metadata.Info);
+                }
+
+                return pluginInstance;
+            }
+        }
+
+        // 修改原有的 LoadPluginFromFolder 方法为 LoadPluginFromMetadata
+        private IPlugin LoadPluginFromMetadata(PluginMetadata metadata)
+        {
+            var pluginFolder = metadata.FolderPath;
+            var folderName = Path.GetFileName(pluginFolder);
+            Logger.Info($"加载插件: {folderName}");
+
+            SetupPluginDependencyResolution(pluginFolder);
+
+            var expectedDllName = $"{folderName}.dll";
+            var pluginDllPath = Path.Combine(pluginFolder, expectedDllName);
+
+            if (!File.Exists(pluginDllPath))
             {
-                Logger.Error($"多次尝试后仍无法复制文件: {pluginDllPath}");
-                return null;
+                var dllFiles = Directory.GetFiles(pluginFolder, "*.dll");
+                if (dllFiles.Length == 0)
+                {
+                    Logger.Warning($"在文件夹 {folderName} 中未找到DLL文件");
+                    return null;
+                }
+                pluginDllPath = dllFiles[0];
+                Logger.Info($"使用找到的DLL: {Path.GetFileName(pluginDllPath)}");
             }
 
-            lock (_allShadowCopiedPaths)
-            {
-                _allShadowCopiedPaths.Add(shadowCopiedDllPath);
-            }
+            string tempShadowDir = Path.Combine(Path.GetTempPath(), "ToolboxPluginShadow",
+                $"{folderName}_{Guid.NewGuid()}");
+            Directory.CreateDirectory(tempShadowDir);
 
-            // 更新加载上下文
-            var loadContext = _scannedPluginContexts[metadata.Info.Name];
-            loadContext.ShadowCopiedDllPath = shadowCopiedDllPath;
+            string shadowCopiedDllPath = Path.Combine(tempShadowDir, Path.GetFileName(pluginDllPath));
 
-            var assemblyLoader = new PluginAssemblyLoader(pluginFolder);
-            Assembly assembly;
             try
             {
-                assembly = assemblyLoader.LoadFromAssemblyPath(shadowCopiedDllPath);
+                bool copySuccess = false;
+                int retryCount = 0;
+                while (!copySuccess && retryCount < 5)
+                {
+                    try
+                    {
+                        if (File.Exists(shadowCopiedDllPath))
+                        {
+                            File.Delete(shadowCopiedDllPath);
+                        }
+                        File.Copy(pluginDllPath, shadowCopiedDllPath, true);
+                        copySuccess = true;
+                    }
+                    catch (IOException)
+                    {
+                        retryCount++;
+                        System.Threading.Thread.Sleep(100);
+                    }
+                }
+
+                if (!copySuccess)
+                {
+                    Logger.Error($"多次尝试后仍无法复制文件: {pluginDllPath}");
+                    return null;
+                }
+
+                lock (_allShadowCopiedPaths)
+                {
+                    _allShadowCopiedPaths.Add(shadowCopiedDllPath);
+                }
+
+                // 更新加载上下文
+                var loadContext = _scannedPluginContexts[metadata.Info.Name];
+                loadContext.ShadowCopiedDllPath = shadowCopiedDllPath;
+
+                var assemblyLoader = new PluginAssemblyLoader(pluginFolder);
+                Assembly assembly;
+                try
+                {
+                    assembly = assemblyLoader.LoadFromAssemblyPath(shadowCopiedDllPath);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error($"加载程序集失败: {shadowCopiedDllPath}", ex);
+                    DeleteShadowCopyFiles(loadContext);
+                    return null;
+                }
+                
+                loadContext.Assembly = assembly;
+
+                try
+                {
+                    foreach (Type type in assembly.GetTypes())
+                    {
+                        if (typeof(IPlugin).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
+                        {
+                            Logger.Info($"找到插件类型: {type.FullName}");
+
+                            IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
+                            plugin.Initialize();
+
+                            Logger.Info($"插件加载成功: {plugin.Name} v{plugin.Version}");
+                            return plugin;
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Logger.Error($"反射加载类型失败: {shadowCopiedDllPath}", ex);
+                    if (ex.LoaderExceptions != null)
+                    {
+                        foreach (var loaderEx in ex.LoaderExceptions)
+                        {
+                            Logger.Error($"加载异常详情: {loaderEx.Message}", loaderEx);
+                        }
+                    }
+                    DeleteShadowCopyFiles(loadContext);
+                    return null;
+                }
+
+                Logger.Warning($"在 {Path.GetFileName(pluginDllPath)} 中未找到实现IPlugin接口的类型");
+                DeleteShadowCopyFiles(loadContext);
+                return null;
             }
             catch (Exception ex)
             {
-                Logger.Error($"加载程序集失败: {shadowCopiedDllPath}", ex);
-                DeleteShadowCopyFiles(loadContext);
+                Logger.Error($"加载插件失败 {folderName}", ex);
+                DeleteShadowCopyFiles(new PluginLoadContext { ShadowCopiedDllPath = shadowCopiedDllPath });
                 return null;
             }
-            
-            loadContext.Assembly = assembly;
-
-            try
-            {
-                foreach (Type type in assembly.GetTypes())
-                {
-                    if (typeof(IPlugin).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
-                    {
-                        Logger.Info($"找到插件类型: {type.FullName}");
-
-                        IPlugin plugin = (IPlugin)Activator.CreateInstance(type);
-                        plugin.Initialize();
-
-                        Logger.Info($"插件加载成功: {plugin.Name} v{plugin.Version}");
-                        return plugin;
-                    }
-                }
-            }
-            catch (ReflectionTypeLoadException ex)
-            {
-                Logger.Error($"反射加载类型失败: {shadowCopiedDllPath}", ex);
-                if (ex.LoaderExceptions != null)
-                {
-                    foreach (var loaderEx in ex.LoaderExceptions)
-                    {
-                        Logger.Error($"加载异常详情: {loaderEx.Message}", loaderEx);
-                    }
-                }
-                DeleteShadowCopyFiles(loadContext);
-                return null;
-            }
-
-            Logger.Warning($"在 {Path.GetFileName(pluginDllPath)} 中未找到实现IPlugin接口的类型");
-            DeleteShadowCopyFiles(loadContext);
-            return null;
         }
-        catch (Exception ex)
-        {
-            Logger.Error($"加载插件失败 {folderName}", ex);
-            DeleteShadowCopyFiles(new PluginLoadContext { ShadowCopiedDllPath = shadowCopiedDllPath });
-            return null;
-        }
-    }
     
         private void LoadPluginFromFolder(string pluginFolder)
         {
@@ -751,15 +758,21 @@ namespace Toolbox.Core
 
                     plugin.Dispose();
 
-                    if (_pluginLoadContexts.TryGetValue(plugin, out var loadContext) &&
-                        Directory.Exists(loadContext.DependenciesPath))
+                    if (_pluginLoadContexts.TryGetValue(plugin, out var loadContext))
                     {
-                        ReleaseDirectoryLocks(loadContext.DependenciesPath);
-                    }
-
-                    if (_pluginLoadContexts.TryGetValue(plugin, out var context))
-                    {
-                        DeleteShadowCopyFiles(context);
+                        // 优化：先清理程序集引用，再删除文件
+                        if (loadContext.Assembly != null)
+                        {
+                            // 清理程序集引用以帮助GC
+                            loadContext.Assembly = null;
+                        }
+                
+                        if (Directory.Exists(loadContext.DependenciesPath))
+                        {
+                            ReleaseDirectoryLocks(loadContext.DependenciesPath);
+                        }
+                
+                        DeleteShadowCopyFiles(loadContext);
                     }
 
                     _plugins.Remove(plugin);

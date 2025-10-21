@@ -162,7 +162,7 @@ namespace ToolboxHost
             {
                 try
                 {
-                    // 尝试释放目标文件可能的锁定
+                    // 优化：在复制前先检查并尝试释放锁定
                     if (File.Exists(destPath))
                     {
                         ReleaseFileLock(destPath);
@@ -307,9 +307,9 @@ namespace ToolboxHost
         }
 
 
-        private void UpdatePluginList()
+        private async void UpdatePluginList()
         {
-            Dispatcher.Invoke(() =>
+            await Dispatcher.InvokeAsync(() =>
             {
                 PluginListBox.ItemsSource = null;
                 // PluginListBox.ItemsSource = _pluginManager.Plugins;
@@ -317,7 +317,7 @@ namespace ToolboxHost
                 // 确保这里使用的是正确的数据源
                 PluginListBox.ItemsSource = _pluginManager.GetScannedPlugins().Select(p => p.Info); // 或者其他合适的数据源
                 PluginCountText.Text = $"插件: {_pluginManager.GetScannedPlugins().Count()}"; // 更新计数
-            });
+            }, System.Windows.Threading.DispatcherPriority.Background);
         }
 
 
