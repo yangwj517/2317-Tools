@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -161,7 +162,7 @@ namespace ToolboxHost
             {
                 try
                 {
-                    // 尝试释放目标文件可能的锁定
+                    // 优化：在复制前先检查并尝试释放锁定
                     if (File.Exists(destPath))
                     {
                         ReleaseFileLock(destPath);
@@ -306,9 +307,9 @@ namespace ToolboxHost
         }
 
 
-        private void UpdatePluginList()
+        private async void UpdatePluginList()
         {
-            Dispatcher.Invoke(() =>
+            await Dispatcher.InvokeAsync(() =>
             {
                 PluginListBox.ItemsSource = null;
                 // PluginListBox.ItemsSource = _pluginManager.Plugins;
@@ -316,7 +317,7 @@ namespace ToolboxHost
                 // 确保这里使用的是正确的数据源
                 PluginListBox.ItemsSource = _pluginManager.GetScannedPlugins().Select(p => p.Info); // 或者其他合适的数据源
                 PluginCountText.Text = $"插件: {_pluginManager.GetScannedPlugins().Count()}"; // 更新计数
-            });
+            }, System.Windows.Threading.DispatcherPriority.Background);
         }
 
 
@@ -523,9 +524,13 @@ namespace ToolboxHost
         /// </summary>
         private void PluginListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
+            if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
             {
-                OpenPluginInTab(selectedPlugin);
+                var plugin = _pluginManager.LoadPlugin(selectedPluginInfo.Name);
+                if (plugin != null)
+                {
+                    OpenPluginInTab(plugin);
+                }
             }
         }
 
@@ -538,9 +543,18 @@ namespace ToolboxHost
         /// </summary>
         private void OpenSelectedPlugin_Click(object sender, RoutedEventArgs e)
         {
-            if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
+            if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
             {
-                OpenPluginInTab(selectedPlugin);
+                var plugin = _pluginManager.LoadPlugin(selectedPluginInfo.Name);
+                if (plugin != null)
+                {
+                    OpenPluginInTab(plugin);
+                }
+                else
+                {
+                    MessageBox.Show($"无法加载插件: {selectedPluginInfo.Name}\n请查看日志了解详细信息", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 
@@ -549,9 +563,14 @@ namespace ToolboxHost
         /// </summary>
         private void OpenSelectedPluginFolder_Click(object sender, RoutedEventArgs e)
         {
-            if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
+            if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
             {
-                OpenPluginFolder(selectedPlugin);
+                // 根据插件名称加载插件以获取上下文信息
+                var plugin = _pluginManager.LoadPlugin(selectedPluginInfo.Name);
+                if (plugin != null)
+                {
+                    OpenPluginFolder(plugin);
+                }
             }
         }
 
@@ -560,9 +579,23 @@ namespace ToolboxHost
         /// </summary>
         private void ViewPluginInfo_Click(object sender, RoutedEventArgs e)
         {
-            if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
+            if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
             {
-                ShowPluginInfo(selectedPlugin);
+                // 根据插件名称查找已加载的插件实例，如果未加载则加载它
+                var plugin = _pluginManager.LoadPlugin(selectedPluginInfo.Name);
+                if (plugin != null)
+                {
+                    var config = _pluginManager.GetPluginConfig(plugin);
+                    var infoWindow = new PluginInfoWindow(plugin, config);
+                    infoWindow.Owner = this;
+                    infoWindow.ShowDialog();
+                    Logger.Info($"查看插件信息: {plugin.Name}");
+                }
+                else
+                {
+                    MessageBox.Show($"无法加载插件: {selectedPluginInfo.Name}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             else
             {
@@ -576,9 +609,20 @@ namespace ToolboxHost
         /// </summary>
         private void UnloadSelectedPlugin_Click(object sender, RoutedEventArgs e)
         {
-            if (PluginListBox.SelectedItem is IPlugin selectedPlugin)
+            if (PluginListBox.SelectedItem is PluginInfo selectedPluginInfo)
             {
-                UnloadPlugin(selectedPlugin);
+                // 直接通过插件管理器卸载插件
+                bool success = _pluginManager.UnloadPluginByName(selectedPluginInfo.Name);
+                if (success)
+                {
+                    UpdatePluginList();
+                    UpdateStatus($"插件已卸载: {selectedPluginInfo.Name}");
+                }
+                else
+                {
+                    MessageBox.Show($"卸载插件失败: {selectedPluginInfo.Name}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             else
             {
@@ -873,7 +917,7 @@ namespace ToolboxHost
         #endregion
 
         #region 刷新功能
-        private void RefreshPluginList_Click(object sender, RoutedEventArgs e)
+        private async void RefreshPluginList_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -882,6 +926,33 @@ namespace ToolboxHost
                 _pluginManager.ReloadAllPlugins();
                 WorkspaceTabControl.Items.Clear();
                 UpdateStatus("插件列表刷新完成");
+                
+                // 针对菜单项的特殊处理
+                if (sender is MenuItem menuItem)
+                {
+                    // 延迟处理，等待菜单关闭动画完成
+                    await Task.Delay(150);
+            
+                    // 使用异步调用来恢复菜单项的视觉状态
+                    Dispatcher.BeginInvoke(new Action(() => {
+                        // 强制重新计算菜单项的视觉状态
+                        menuItem.InvalidateVisual();
+                        menuItem.UpdateLayout();
+                
+                        // 检查鼠标是否仍在菜单项上
+                        Point mousePos = Mouse.GetPosition(menuItem);
+                        Rect bounds = new Rect(0, 0, menuItem.ActualWidth, menuItem.ActualHeight);
+                
+                        if (bounds.Contains(mousePos))
+                        {
+                            // 手动触发鼠标进入事件
+                            menuItem.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+                            {
+                                RoutedEvent = Mouse.MouseEnterEvent
+                            });
+                        }
+                    }), System.Windows.Threading.DispatcherPriority.Render);
+                }
             }
             catch (Exception ex)
             {
