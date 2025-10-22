@@ -206,7 +206,24 @@ namespace ModbusConfigPlugin
                 DataTypeColumn.SelectedIndex = 0;
             }
         }
+        
+        private void SetupPreviewDataGrid()
+        {
+            PreviewDataGrid.Columns.Clear();
 
+            foreach (DataColumn column in _excelData.Columns)
+            {
+                var dataGridTextColumn = new DataGridTextColumn
+                {
+                    Header = column.ColumnName,
+                    Binding = new System.Windows.Data.Binding(column.ColumnName),
+                    Width = new DataGridLength(120, DataGridLengthUnitType.Auto)
+                };
+
+                PreviewDataGrid.Columns.Add(dataGridTextColumn);
+            }
+        }
+        
         private void LoadExcelData(string filePath, string sheetName)
         {
             _excelData = new DataTable();
@@ -268,6 +285,7 @@ namespace ModbusConfigPlugin
                     _excelData.Rows.Add(dataRow);
                 }
             }
+            SetupPreviewDataGrid();
         }
 
         private string GetCellValue(Cell cell, SharedStringTable sharedStringTable)
@@ -585,6 +603,7 @@ namespace ModbusConfigPlugin
             PreviewDataGrid.ItemsSource = null;
             InitializeControls();
             UpdateStatus("已清空所有配置");
+            PreviewDataGrid.Columns.Clear();
         }
 
         private void UpdateStatus(string message)
