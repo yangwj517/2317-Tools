@@ -41,6 +41,6 @@
 ..\2317\ToolboxHost\bin\Debug\Plugins\TestPlugin1\
 ├── TestPlugin1.dll         # 编译后的插件程序集
 ├── plugin.json            # 插件配置文件
-├── Dependencies\          # 依赖文件夹（空）
-└── Resources\             # 资源文件夹（空）
+├── Dependencies\          # 依赖文件夹
+└── Resources\             # 资源文件夹
 ```
