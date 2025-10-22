@@ -35,3 +35,12 @@
 </Project>
 ```
 * 更改格式后重新编译，并把dll文件复制到plugins文件夹即可
+
+* 部署后的Plugins文件夹结构
+```bash
+..\2317\ToolboxHost\bin\Debug\Plugins\TestPlugin1\
+├── TestPlugin1.dll         # 编译后的插件程序集
+├── plugin.json            # 插件配置文件
+├── Dependencies\          # 依赖文件夹（空）
+└── Resources\             # 资源文件夹（空）
+```
