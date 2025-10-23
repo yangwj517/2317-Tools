@@ -102,7 +102,11 @@ namespace ToolboxHost
                     {
                         // 执行覆盖操作
                         // 删除原有插件
-                        DelFlord(pluginDir,selectedFolderName);
+                        if (!DelFlord(pluginDir, selectedFolderName))
+                        {
+                            MessageBox.Show("删除原有插件失败！", "导入失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
                     }
                     else
                     {

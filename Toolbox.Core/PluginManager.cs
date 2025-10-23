@@ -954,8 +954,12 @@ namespace Toolbox.Core
 
             // 3. 清理程序集缓存
             ClearAssemblyCache();
+            
+            // 4. 清理插件元数据缓存
+            _pluginMetadata.Clear();
+            _scannedPluginContexts.Clear();
 
-            // 4. 重新加载插件
+            // 5. 重新加载插件
             // LoadAllPlugins();
             ScanAllPlugins();
 
