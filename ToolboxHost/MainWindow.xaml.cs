@@ -55,16 +55,79 @@ namespace ToolboxHost
             }
         }
 
+        private class PluginValidationResult
+        {
+            public bool IsValid { get; set; }
+            public List<string> Errors { get; set; } = new List<string>();
+        }
 
+        private PluginValidationResult ValidatePluginStructureDetailed(string folderPath, string folderName)
+        {
+            var result = new PluginValidationResult();
+    
+            // 检测DLL文件
+            string searchPattern = $"*.dll";
+            string[] files = Directory.GetFiles(folderPath, searchPattern, SearchOption.TopDirectoryOnly);
+            if (files.Length == 0)
+            {
+                result.Errors.Add("未找到DLL文件");
+            }
+            else if (files.Length > 1)
+            {
+                result.Errors.Add("找到多个DLL文件，请确保只有一个主程序集");
+            }
+            else
+            {
+                string fileName = Path.GetFileNameWithoutExtension(files[0]);
+                if (folderName != fileName)
+                {
+                    result.Errors.Add($"DLL文件名({fileName})与文件夹名({folderName})不一致");
+                }
+            }
+
+            // 检查必需的文件夹
+            if (!Directory.Exists(Path.Combine(folderPath, "Dependencies")))
+                result.Errors.Add("缺少Dependencies文件夹");
+        
+            if (!Directory.Exists(Path.Combine(folderPath, "Resources")))
+                result.Errors.Add("缺少Resources文件夹");
+
+            // 检查必需的文件
+            if (!File.Exists(Path.Combine(folderPath, "plugin.json")))
+                result.Errors.Add("缺少plugin.json配置文件");
+        
+            if (!File.Exists(Path.Combine(folderPath, "README.txt")))
+                result.Errors.Add("缺少README.txt说明文件");
+
+            result.IsValid = result.Errors.Count == 0;
+            return result;
+        }
+
+        private PluginInfo GetExistingPluginInfo(string pluginName)
+        {
+            try
+            {
+                // 查找已存在的插件信息
+                var existingPlugin = _pluginManager.GetScannedPlugins()
+                    .FirstOrDefault(p => p.Info.Name.Equals(pluginName, StringComparison.OrdinalIgnoreCase));
+            
+                return existingPlugin?.Info;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning($"获取现有插件信息失败: {pluginName} - {ex.Message}");
+                return null;
+            }
+        }
+        
         /// <summary>
         /// 新插件导入
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
-        private void ImportNewPlugin_Click(object sender, RoutedEventArgs e)
+        private async void ImportNewPlugin_Click(object sender, RoutedEventArgs e)
         {
             // 用户选择一个文件夹
-            // 1. 让用户选择插件所在的文件夹
             var folderDialog = new System.Windows.Forms.FolderBrowserDialog
             {
                 Description = "请选择插件所在的文件夹",
@@ -75,33 +138,43 @@ namespace ToolboxHost
             {
                 return; // 用户取消选择
             }
-            // 检测文件夹结构是否符合插件要求
-            string sourceDir = folderDialog.SelectedPath;// 获取文件夹地址
-            string selectedFolderName = Path.GetFileName(sourceDir);  // 获取文件夹名称
+            
+            string sourceDir = folderDialog.SelectedPath;
+            string selectedFolderName = Path.GetFileName(sourceDir);
             string pluginDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Plugins");
+            
             try
             {
-                // 结构是否符合要求
-                if (!IsValidPluginStructure(sourceDir,selectedFolderName))
+                UpdateStatus($"正在验证插件 {selectedFolderName}...");
+                
+                // 结构是否符合要求（提供详细反馈）
+                var validationResult = ValidatePluginStructureDetailed(sourceDir, selectedFolderName);
+                if (!validationResult.IsValid)
                 {
-                    MessageBox.Show("插件文件夹结构不符合要求！\n要求：可创建插件模板查看具体插件文件结构要求。",
-                         "导入失败",
-                         MessageBoxButton.OK,
-                         MessageBoxImage.Error);
+                    var message = "插件文件夹结构不符合要求！\n\n" + 
+                                 string.Join("\n", validationResult.Errors) +
+                                 "\n\n请创建插件模板查看具体插件文件结构要求。";
+                                 
+                    MessageBox.Show(message, "导入失败", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
+
                 // 是否存在同名插件
-                if (hasSamePlugin(pluginDir,selectedFolderName))
+                if (hasSamePlugin(pluginDir, selectedFolderName))
                 {
-                    MessageBoxResult result = MessageBox.Show("此插件目录已在系统中存在\n是否覆盖？",
-                         "插件已存在！",
-                         MessageBoxButton.OKCancel,
-                         MessageBoxImage.Warning);
+                    var pluginInfo = GetExistingPluginInfo(selectedFolderName);
+                    var result = MessageBox.Show(
+                        $"插件 '{selectedFolderName}' 已存在。\n\n" +
+                        $"当前版本: {pluginInfo?.Version ?? "未知"}\n" +
+                        $"作者: {pluginInfo?.Author ?? "未知"}\n\n" +
+                        "是否覆盖？",
+                        "插件已存在！",
+                        MessageBoxButton.OKCancel,
+                        MessageBoxImage.Warning);
 
                     if (result == MessageBoxResult.OK)
                     {
-                        // 执行覆盖操作
-                        // 删除原有插件
+                        UpdateStatus($"正在卸载现有插件 {selectedFolderName}...");
                         if (!DelFlord(pluginDir, selectedFolderName))
                         {
                             MessageBox.Show("删除原有插件失败！", "导入失败", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -110,25 +183,64 @@ namespace ToolboxHost
                     }
                     else
                     {
-                        // 不执行操作,退出插件导入
                         return;
                     }
                 }
+
+                // 显示导入进度
+                UpdateStatus($"正在导入插件 {selectedFolderName}...");
+                
                 // 导入该插件
                 ImportPlugin(sourceDir, Path.Combine(pluginDir, selectedFolderName));
+                
                 // 刷新插件列表
+                UpdateStatus("正在刷新插件列表...");
                 _pluginManager.ReloadAllPlugins();
                 WorkspaceTabControl.Items.Clear();
-                MessageBox.Show("新插件导入成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                UpdateStatus("插件导入完成");
+                MessageBox.Show($"新插件导入成功！\n\n插件名称: {selectedFolderName}", 
+                               "成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 Logger.Info($"导入新插件{selectedFolderName}");
             }
             catch (Exception ex)
             {
-                MessageBox.Show("新插件导入异常！", "失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                UpdateStatus("插件导入失败");
+                MessageBox.Show($"新插件导入异常！\n\n{ex.Message}", "失败", MessageBoxButton.OK, MessageBoxImage.Error);
                 Logger.Error($"插件导入异常：{ex.Message}", ex);
             }
-            
         }
+
+
+        /// <summary>
+        /// 异步复制文件夹及其内容
+        /// </summary>
+        private async Task ImportPluginAsync(string sourceDir, string destDir)
+        {
+            if (!Directory.Exists(destDir))
+            {
+                Directory.CreateDirectory(destDir);
+            }
+
+            // 异步复制文件
+            var fileTasks = new List<Task>();
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(destDir, Path.GetFileName(file));
+                fileTasks.Add(Task.Run(() => CopyFileWithRetry(file, destFile, true)));
+            }
+
+            // 递归复制子文件夹
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                string destSubDir = Path.Combine(destDir, Path.GetFileName(subDir));
+                await ImportPluginAsync(subDir, destSubDir);
+            }
+
+            // 等待所有文件复制完成
+            await Task.WhenAll(fileTasks);
+        }
+
 
         /// <summary>
         /// 复制文件夹及其内容（增强版，解决文件锁定问题）
@@ -256,7 +368,6 @@ namespace ToolboxHost
                 return IsFileLocked(ex);
             }
         }
-
 
         // 同名插件卸载
         private bool DelFlord(string pluginDir,string flordName)
@@ -830,27 +941,140 @@ namespace ToolboxHost
 
             if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
-                // 使用 WPF 的输入对话框替代 VisualBasic.InputBox
                 var inputDialog = new InputDialog("创建插件模板", "请输入插件名称:", "MyNewPlugin");
 
                 if (inputDialog.ShowDialog() == true && !string.IsNullOrEmpty(inputDialog.Answer))
                 {
                     var pluginFolder = System.IO.Path.Combine(dialog.SelectedPath, inputDialog.Answer);
-                    CreatePluginTemplate(pluginFolder, inputDialog.Answer);
+            
+                    // 使用高级选项创建插件模板
+                    var options = new PluginTemplateOptions
+                    {
+                        PluginName = inputDialog.Answer,
+                        Version = "1.0.0",
+                        Description = $"这是一个{inputDialog.Answer}插件",
+                        Author = "Wenjie Yang",
+                        CreateResourcesFolder = true,
+                        CreateDependenciesFolder = true,
+                        Dependencies = new List<string> { "System.Windows.Forms", "Newtonsoft.Json" },
+                        Settings = new Dictionary<string, object>
+                        {
+                            ["AutoStart"] = false,
+                            ["MaxConnections"] = 10,
+                            ["Timeout"] = 30
+                        }
+                    };
+            
+                    CreateAdvancedPluginTemplate(pluginFolder, inputDialog.Answer, options);
                 }
             }
         }
+        
+        public class PluginTemplateOptions
+        {
+            public string PluginName { get; set; }
+            public string Version { get; set; }
+            public string Description { get; set; }
+            public string Author { get; set; }
+            public bool CreateResourcesFolder { get; set; } = true;
+            public bool CreateDependenciesFolder { get; set; } = true;
+            public List<string> Dependencies { get; set; }
+            public Dictionary<string, object> Settings { get; set; }
+        }
 
+        private string GenerateReadmeContent(string pluginName, PluginTemplateOptions options)
+        {
+            var content = $"{pluginName} 插件\n\n" +
+                          "文件夹结构说明:\n" +
+                          $"{pluginName}.dll - 主程序集\n";
+                 
+            if (options.CreateResourcesFolder)
+                content += "Resources/ - 资源文件\n";
+        
+            if (options.CreateDependenciesFolder)
+                content += "Dependencies/ - 依赖项\n";
+        
+            content += "plugin.json - 配置文件\n\n" +
+                       "开发说明:\n" +
+                       "1. 创建类库项目\n" +
+                       "2. 引用 Toolbox.Core\n" +
+                       "3. 实现 IPlugin 接口\n" +
+                       "4. 编译后将dll复制到此文件夹\n\n" +
+                       $"插件名称: {pluginName}\n" +
+                       $"版本: {options.Version ?? "1.0.0"}\n" +
+                       $"作者: {options.Author ?? "Unknown"}\n" +
+                       $"描述: {options.Description ?? "无描述"}";
+
+            return content;
+        }
+
+        private void CreateAdvancedPluginTemplate(string folderPath, string pluginName, PluginTemplateOptions options)
+        {
+            try
+            {
+                UpdateStatus("正在创建插件模板...");
+                
+                // 创建基本文件夹结构
+                System.IO.Directory.CreateDirectory(folderPath);
+                
+                // 根据选项创建文件夹
+                if (options.CreateResourcesFolder)
+                    System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderPath, "Resources"));
+                    
+                if (options.CreateDependenciesFolder)
+                    System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderPath, "Dependencies"));
+
+                // 创建说明文件
+                var readmeContent = GenerateReadmeContent(pluginName, options);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(folderPath, "README.txt"), readmeContent, System.Text.Encoding.UTF8);
+
+                // 创建JSON格式的配置文件
+                var pluginConfig = new PluginInfo
+                {
+                    Name = pluginName,
+                    Version = options.Version ?? "1.0.0",
+                    Description = options.Description ?? $"这是一个{pluginName}插件",
+                    Author = options.Author ?? "Wenjie Yang",
+                    Enabled = true,
+                    Dependencies = options.Dependencies ?? new List<string>(),
+                    Settings = options.Settings ?? new Dictionary<string, object>()
+                };
+
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(folderPath, "plugin.json"),
+                    pluginConfig.ToJson(),
+                    System.Text.Encoding.UTF8
+                );
+
+                // 打开创建的文件夹
+                System.Diagnostics.Process.Start("explorer.exe", folderPath);
+
+                UpdateStatus($"已创建插件模板: {pluginName}");
+                MessageBox.Show($"插件模板已创建在: {folderPath}", "成功",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+
+                Logger.Info($"创建插件模板: {pluginName}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"创建插件模板失败: {pluginName}", ex);
+                MessageBox.Show($"创建插件模板失败: {ex.Message}", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        
         private void CreatePluginTemplate(string folderPath, string pluginName)
         {
             try
             {
+                // 显示创建进度
+                UpdateStatus("正在创建插件模板...");
                 // 创建文件夹结构
                 System.IO.Directory.CreateDirectory(folderPath);
                 System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderPath, "Resources"));
                 System.IO.Directory.CreateDirectory(System.IO.Path.Combine(folderPath, "Dependencies"));
 
-                // 创建说明文件
+                // 创建说明文件（直接写入内容，不使用GenerateReadmeContent方法）
                 var readmeContent = $"{pluginName} 插件\n\n" +
                                    "文件夹结构说明:\n" +
                                    $"{pluginName}.dll - 主程序集\n" +
@@ -871,13 +1095,13 @@ namespace ToolboxHost
                     Name = pluginName,
                     Version = "1.0.0",
                     Description = $"这是一个{pluginName}插件",
-                    Author = "YourName",
+                    Author = "Wenjie Yang",
                     Enabled = true,
                     Dependencies = new List<string>
-            {
-                "System.Windows.Forms",
-                "Newtonsoft.Json"
-            },
+                    {
+                        "System.Windows.Forms",
+                        "Newtonsoft.Json"
+                    },
                     Settings = new Dictionary<string, object>
                     {
                         ["AutoStart"] = false,
@@ -909,6 +1133,7 @@ namespace ToolboxHost
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
 
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
