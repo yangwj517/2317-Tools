@@ -11,6 +11,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Xml.Linq;
+using Toolbox.Core;
 using Item = ModbusConfigPlugin.pojo.Item;
 
 namespace ModbusConfigPlugin
@@ -286,6 +287,11 @@ namespace ModbusConfigPlugin
                 }
             }
             SetupPreviewDataGrid();
+            // 新增：自动预览数据
+            PreviewDataGrid.ItemsSource = _excelData.DefaultView;
+            UpdateStatus($"Excel数据加载成功，共 {_excelData.Rows.Count} 行数据");
+            // 新增：调试日志
+            Logger.Info($"_excelData.Rows.Count = {_excelData.Rows.Count}");
         }
 
         private string GetCellValue(Cell cell, SharedStringTable sharedStringTable)
@@ -348,7 +354,8 @@ namespace ModbusConfigPlugin
                 UpdateStatus("请先加载Excel数据");
                 return;
             }
-
+            // 强制刷新 DataGrid
+            PreviewDataGrid.Items.Refresh();
             PreviewDataGrid.ItemsSource = _excelData.DefaultView;
             UpdateStatus($"数据预览加载完成，共 {_excelData.Rows.Count} 行数据");
         }
