@@ -1200,12 +1200,15 @@ namespace TempBatch
                     }
                 }
 
-                // 如果Ude检测失败，尝试系统默认编码
+                // 如果Ude检测失败，尝试更准确地检测ANSI编码
                 try
                 {
                     // 注册编码提供程序以支持更多编码
                     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                    return Encoding.GetEncoding(0); // 获取系统默认ANSI编码
+                    
+                    // 获取系统默认ANSI代码页
+                    int ansiCodePage = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ANSICodePage;
+                    return Encoding.GetEncoding(ansiCodePage);
                 }
                 catch
                 {
@@ -1221,13 +1224,28 @@ namespace TempBatch
             }
         }
 
+
         // 新增：同时读取文件内容和编码
         private (string content, Encoding encoding) ReadFileWithEncoding(string filePath)
         {
             Encoding encoding = GetFileEncoding(filePath);
-            string content = File.ReadAllText(filePath, encoding);
+            string content;
+    
+            try
+            {
+                content = File.ReadAllText(filePath, encoding);
+            }
+            catch (Exception ex)
+            {
+                // 如果使用检测到的编码读取失败，尝试使用UTF-8
+                UpdateStatus($"使用检测编码 {encoding.EncodingName} 读取文件失败: {ex.Message}，尝试使用UTF-8");
+                encoding = Encoding.UTF8;
+                content = File.ReadAllText(filePath, encoding);
+            }
+    
             return (content, encoding);
         }
+
 
         private string ReplaceFirstOccurrence(string source, string find, string replace)
         {
