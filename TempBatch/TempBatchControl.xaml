@@ -35,6 +35,7 @@
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="模板文件路径:" VerticalAlignment="Center"/>
                     <TextBox Grid.Row="2" Grid.Column="1" x:Name="TempFilePathTextBox" Margin="5" IsReadOnly="True"/>
                     <Button Grid.Row="2" Grid.Column="2" Content="选择文件" Click="SelectTemplateFile_Click" Margin="5"/>
+                    <Button Grid.Row="2" Grid.Column="3" Content="选择文件夹" Click="SelectTemplateFolder_Click" Margin="5"/>
                 </Grid>
             </GroupBox>
 
