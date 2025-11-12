@@ -232,6 +232,71 @@ namespace TempBatch
                 UpdateStatus($"模板文件加载成功，文件类型: {_templateFileExtension}，请点击参数解析");
             }
         }
+        
+        // 添加新字段用于存储模板文件列表
+        private List<string> _templateFiles = new List<string>();
+
+        // 添加选择模板文件夹的方法
+        private void SelectTemplateFolder_Click(object sender, RoutedEventArgs e)
+        {
+            // 确保在UI线程执行
+            if (!_uiDispatcher.CheckAccess())
+            {
+                _uiDispatcher.Invoke(() => SelectTemplateFolder_Click(sender, e));
+                return;
+            }
+
+            var openFolderDialog = new  Microsoft.WindowsAPICodePack.Dialogs.CommonOpenFileDialog
+            {
+                IsFolderPicker = true,
+                Title = "选择模板文件夹"
+            };
+
+            if (openFolderDialog.ShowDialog() == Microsoft.WindowsAPICodePack.Dialogs.CommonFileDialogResult.Ok)
+            {
+                string selectedPath = openFolderDialog.FileName;
+                LoadTemplatesFromFolder(selectedPath);
+            }
+        }
+
+        private void LoadTemplatesFromFolder(string folderPath)
+        {
+            try
+            {
+                // 获取文件夹下所有文件
+                var files = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+                    .Where(file => IsTemplateFile(file))
+                    .ToList();
+
+                if (files.Count == 0)
+                {
+                    UpdateStatus("所选文件夹中未找到支持的模板文件");
+                    return;
+                }
+
+                _templateFiles = files;
+                _tempFilePathTextBox.Text = $"{folderPath} (包含 {files.Count} 个模板文件)";
+        
+                // 使用第一个文件作为模板扩展名参考
+                _templateFileExtension = Path.GetExtension(files[0]);
+        
+                UpdateStatus($"模板文件夹加载成功，包含 {files.Count} 个模板文件，文件类型: {_templateFileExtension}");
+            }
+            catch (Exception ex)
+            {
+                UpdateStatus($"加载模板文件夹失败：{ex.Message}");
+                Logger.Error($"加载模板文件夹失败：{ex.Message}", ex);
+            }
+        }
+
+        private bool IsTemplateFile(string filePath)
+        {
+            // 定义支持的模板文件扩展名
+            var supportedExtensions = new[] { ".txt", ".doc", ".docx", ".xls", ".xlsx", ".pdf", ".xml", ".html", ".htm", ".csv" };
+            var extension = Path.GetExtension(filePath)?.ToLowerInvariant();
+            return supportedExtensions.Contains(extension);
+        }
+
 
         private void TemplateParam_Click(object sender, RoutedEventArgs e)
         {
@@ -242,24 +307,36 @@ namespace TempBatch
                 return;
             }
 
-            if (_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text) || !File.Exists(_tempFilePathTextBox.Text))
+            if (_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text))
             {
-                UpdateStatus("请选择有效的模板文件");
+                UpdateStatus("请选择有效的模板文件或模板文件夹");
                 return;
             }
 
             try
             {
                 string templateContent = null;
-                try
+                
+                // 根据是单个文件还是文件夹采取不同处理方式
+                if (_templateFiles != null && _templateFiles.Count > 0)
                 {
-                    templateContent = File.ReadAllText(_tempFilePathTextBox.Text);
+                    // 处理文件夹模式 - 使用第一个文件作为参数解析参考
+                    if (!File.Exists(_templateFiles[0]))
+                    {
+                        UpdateStatus("模板文件不存在");
+                        return;
+                    }
+                    templateContent = File.ReadAllText(_templateFiles[0]);
                 }
-                catch (Exception ex)
+                else
                 {
-                    UpdateStatus($"读取模板文件失败：{ex.Message}");
-                    Logger.Error($"读取模板文件失败：{ex.Message}", ex);
-                    return;
+                    // 处理单个文件模式
+                    if (!File.Exists(_tempFilePathTextBox.Text))
+                    {
+                        UpdateStatus("请选择有效的模板文件");
+                        return;
+                    }
+                    templateContent = File.ReadAllText(_tempFilePathTextBox.Text);
                 }
 
                 if (string.IsNullOrEmpty(templateContent))
@@ -1666,12 +1743,30 @@ namespace TempBatch
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // 读取模板文件内容和编码（使用改进的方法确保编码一致）
-                string originalTemplateContent;
-                Encoding templateEncoding;
+                List<string> templateContents = new List<string>();
+                Encoding templateEncoding = Encoding.UTF8;
+
                 try
                 {
-                    (originalTemplateContent, templateEncoding) = ReadFileWithEncoding(templateFilePath);
-                    UpdateStatus($"检测到模板文件编码: {templateEncoding.EncodingName} ({templateEncoding.WebName})");
+                    if (_templateFiles != null && _templateFiles.Count > 0)
+                    {
+                        // 处理多个模板文件
+                        foreach (var templateFile in _templateFiles)
+                        {
+                            var (content, encoding) = ReadFileWithEncoding(templateFile);
+                            templateContents.Add(content);
+                            templateEncoding = encoding; // 使用最后一个文件的编码作为参考
+                        }
+                        UpdateStatus($"检测到模板文件编码: {templateEncoding.EncodingName} ({templateEncoding.WebName})");
+                    }
+                    else
+                    {
+                        // 处理单个模板文件
+                        string originalTemplateContent;
+                        (originalTemplateContent, templateEncoding) = ReadFileWithEncoding(templateFilePath);
+                        templateContents.Add(originalTemplateContent);
+                        UpdateStatus($"检测到模板文件编码: {templateEncoding.EncodingName} ({templateEncoding.WebName})");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1679,7 +1774,7 @@ namespace TempBatch
                     Logger.Error($"读取模板文件失败：{ex.Message}", ex);
                     return;
                 }
-
+                
                 int successCount = 0;
                 var mergedContent = new StringBuilder();
 
@@ -1711,118 +1806,131 @@ namespace TempBatch
                     // 更新参数起始行
                     UpdateParamBaseStartRows(paramConfigs, fileIndex);
 
-                    // 每次都使用原始模板内容，避免之前的替换影响
-                    string currentContent = originalTemplateContent;
-                    bool hasBlank = false;
-                    bool allParamsEmpty = true; // 跟踪是否所有参数都为空
-
-                    // 处理每个参数
-                    foreach (var config in paramConfigs)
+                    // 处理每个模板文件
+                    for (int templateIndex = 0; templateIndex < templateContents.Count; templateIndex++)
                     {
-                        if (!config.IsEnable) continue;
+                        // 每次都使用原始模板内容，避免之前的替换影响
+                        string currentContent = templateContents[templateIndex];
+                        bool hasBlank = false;
+                        bool allParamsEmpty = true; // 跟踪是否所有参数都为空
 
-                        // 检查参数出现次数字典中是否存在该参数
-                        if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
+                        // 处理每个参数
+                        foreach (var config in paramConfigs)
                         {
-                            paramOccurrence = 1; // 使用默认值
-                            //UpdateStatus($"警告：参数 {config.ParamName} 不在出现次数字典中，使用默认值1");
+                            if (!config.IsEnable) continue;
+
+                            // 检查参数出现次数字典中是否存在该参数
+                            if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
+                            {
+                                paramOccurrence = 1; // 使用默认值
+                            }
+
+                            for (int occurrenceIndex = 0; occurrenceIndex < paramOccurrence; occurrenceIndex++)
+                            {
+                                bool skipExcelRow;
+                                // 检查参数起始行字典中是否存在该参数
+                                if (!_paramBaseStartRows.TryGetValue(config.ParamName, out int paramBaseRow))
+                                {
+                                    paramBaseRow = 0; // 使用默认值
+                                }
+
+                                string paramValue = GenerateParamValue(
+                                    config, _excelData, fileIndex, paramBaseRow, occurrenceIndex,
+                                    out skipExcelRow
+                                );
+
+                                // 如果参数值非空，则不是所有参数都为空
+                                if (!string.IsNullOrEmpty(paramValue))
+                                {
+                                    allParamsEmpty = false;
+                                }
+
+                                if (skipExcelRow)
+                                {
+                                    hasBlank = true;
+                                    paramValue = config.EmptyValue;
+                                }
+                                else if (string.IsNullOrEmpty(paramValue))
+                                {
+                                    paramValue = config.EmptyValue;
+                                }
+
+                                // 替换参数占位符
+                                string placeholder1 = $"#{config.ParamName}";
+                                string placeholder2 = $"#{{{config.ParamName}}}";
+
+                                // 先替换完整格式，再替换简化格式
+                                if (currentContent.Contains(placeholder2))
+                                {
+                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder2, paramValue);
+                                }
+                                else if (currentContent.Contains(placeholder1))
+                                {
+                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder1, paramValue);
+                                }
+                            }
                         }
 
-                        for (int occurrenceIndex = 0; occurrenceIndex < paramOccurrence; occurrenceIndex++)
+                        // 生成文件名
+                        string fileName;
+                        if (templateContents.Count > 1)
                         {
-                            bool skipExcelRow;
-                            // 检查参数起始行字典中是否存在该参数
-                            if (!_paramBaseStartRows.TryGetValue(config.ParamName, out int paramBaseRow))
-                            {
-                                paramBaseRow = 0; // 使用默认值
-                                //UpdateStatus($"警告：参数 {config.ParamName} 不在起始行字典中，使用默认值0");
-                            }
-
-                            string paramValue = GenerateParamValue(
-                                config, _excelData, fileIndex, paramBaseRow, occurrenceIndex,
-                                out skipExcelRow
-                            );
-
-                            // 如果参数值非空，则不是所有参数都为空
-                            if (!string.IsNullOrEmpty(paramValue))
-                            {
-                                allParamsEmpty = false;
-                            }
-
-                            if (skipExcelRow)
-                            {
-                                hasBlank = true;
-                                paramValue = config.EmptyValue;
-                            }
-                            else if (string.IsNullOrEmpty(paramValue))
-                            {
-                                paramValue = config.EmptyValue;
-                            }
-
-                            // 替换参数占位符
-                            string placeholder1 = $"#{config.ParamName}";
-                            string placeholder2 = $"#{{{config.ParamName}}}";
-
-                            // 先替换完整格式，再替换简化格式
-                            if (currentContent.Contains(placeholder2))
-                            {
-                                currentContent = ReplaceFirstOccurrence(currentContent, placeholder2, paramValue);
-                            }
-                            else if (currentContent.Contains(placeholder1))
-                            {
-                                currentContent = ReplaceFirstOccurrence(currentContent, placeholder1, paramValue);
-                            }
-                        }
-                    }
-
-                    // 生成文件名
-                    string fileName = GenerateFileName(fileNameFormat, fileIndex + 1, paramConfigs, _excelData);
-                    string outputPath = Path.Combine(outputDir, fileName);
-                    outputPath = GetUniqueFilePath(outputPath);
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    try
-                    {
-                        // 即使所有参数都为空，也生成文件（包含原始模板内容）
-                        // 使用模板文件的原始编码写入
-                        File.WriteAllText(outputPath, currentContent, templateEncoding);
-                        successCount++;
-
-                        if (mergeFiles)
-                        {
-                            //mergedContent.AppendLine($"===== {fileName} =====");
-                            mergedContent.AppendLine(currentContent);
-                            mergedContent.AppendLine();
-                        }
-
-                        // 更新进度
-                        _generatedFileCount++;
-                        int progress = (int)((double)_generatedFileCount / _totalFileCount * 100);
-                        UpdateProgress(progress, _generatedFileCount, _totalFileCount, fileName);
-
-                        // 状态信息
-                        if (allParamsEmpty)
-                        {
-                            UpdateStatus(string.Format("生成文件 {0} ({1}/{2}) - 注意：所有参数值为空",
-                                fileName, _generatedFileCount, _totalFileCount));
+                            // 多模板情况下在文件名中添加模板索引
+                            fileName = GenerateFileName(fileNameFormat, fileIndex + 1, paramConfigs, _excelData)
+                                      .Replace(_templateFileExtension, $"_{templateIndex + 1}{_templateFileExtension}");
                         }
                         else
                         {
-                            UpdateStatus(string.Format("生成文件 {0} ({1}/{2}){3}",
-                                fileName, _generatedFileCount, _totalFileCount,
-                                hasBlank ? "（注意：部分参数使用了空值替换）" : ""));
+                            fileName = GenerateFileName(fileNameFormat, fileIndex + 1, paramConfigs, _excelData);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        UpdateStatus($"生成文件 {fileName} 失败: {ex.Message}");
-                        Logger.Error($"生成文件 {fileName} 失败: {ex.Message}", ex);
-                    }
+                        
+                        string outputPath = Path.Combine(outputDir, fileName);
+                        outputPath = GetUniqueFilePath(outputPath);
 
-                    // 短暂延迟，让UI有机会更新
-                    Thread.Sleep(10);
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        try
+                        {
+                            // 即使所有参数都为空，也生成文件（包含原始模板内容）
+                            // 使用模板文件的原始编码写入
+                            File.WriteAllText(outputPath, currentContent, templateEncoding);
+                            successCount++;
+
+                            if (mergeFiles)
+                            {
+                                mergedContent.AppendLine(currentContent);
+                                mergedContent.AppendLine();
+                            }
+
+                            // 更新进度
+                            _generatedFileCount++;
+                            int progress = (int)((double)_generatedFileCount / (_totalFileCount * templateContents.Count) * 100);
+                            UpdateProgress(progress, _generatedFileCount, _totalFileCount * templateContents.Count, fileName);
+
+                            // 状态信息
+                            if (allParamsEmpty)
+                            {
+                                UpdateStatus(string.Format("生成文件 {0} ({1}/{2}) - 注意：所有参数值为空",
+                                    fileName, _generatedFileCount, _totalFileCount * templateContents.Count));
+                            }
+                            else
+                            {
+                                UpdateStatus(string.Format("生成文件 {0} ({1}/{2}){3}",
+                                    fileName, _generatedFileCount, _totalFileCount * templateContents.Count,
+                                    hasBlank ? "（注意：部分参数使用了空值替换）" : ""));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            UpdateStatus($"生成文件 {fileName} 失败: {ex.Message}");
+                            Logger.Error($"生成文件 {fileName} 失败: {ex.Message}", ex);
+                        }
+
+                        // 短暂延迟，让UI有机会更新
+                        Thread.Sleep(10);
+                    }
                 }
+
 
                 cancellationToken.ThrowIfCancellationRequested();
 
