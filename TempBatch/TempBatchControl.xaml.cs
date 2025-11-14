@@ -464,7 +464,7 @@ namespace TempBatch
 
                 // 保存当前UI控件的值到局部变量，避免跨线程访问
                 string excelFilePath = _filePathTextBox?.Text;
-                string templateFilePath = _tempFilePathTextBox?.Text;
+                string templateFilePath = _templateFiles[0];
                 string selectedSheetName = _sheetComboBox?.SelectedItem?.ToString();
                 string fileNameFormat = _fileNameFormatTextBox?.Text;
                 bool mergeFiles = _mergeFilesCheckBox?.IsChecked ?? false;
@@ -1332,6 +1332,11 @@ namespace TempBatch
                 return source;
             return source.Substring(0, index) + replace + source.Substring(index + find.Length);
         }
+        
+        private string ReplaceAllOccurrences(string source, string find, string replace)
+        {
+            return source.Replace(find, replace);
+        }
 
         private void UpdateStatus(string message)
         {
@@ -1872,16 +1877,10 @@ namespace TempBatch
                                 // 替换参数占位符
                                 string placeholder1 = $"#{config.ParamName}";
                                 string placeholder2 = $"#{{{config.ParamName}}}";
-
-                                // 先替换完整格式，再替换简化格式
-                                if (currentContent.Contains(placeholder2))
-                                {
-                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder2, paramValue);
-                                }
-                                else if (currentContent.Contains(placeholder1))
-                                {
-                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder1, paramValue);
-                                }
+                                
+                                // 替换所有匹配项
+                                currentContent = ReplaceAllOccurrences(currentContent, placeholder2, paramValue);
+                                currentContent = ReplaceAllOccurrences(currentContent, placeholder1, paramValue);
                             }
                         }
 
