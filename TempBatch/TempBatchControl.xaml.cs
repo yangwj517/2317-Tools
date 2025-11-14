@@ -1838,8 +1838,8 @@ namespace TempBatch
                         {
                             if (!config.IsEnable) continue;
                             
-                            // 重置每个参数的计数器
-                            int paramOccurrenceCount = 0;
+                            // 为每个参数维护一个在当前文件中的出现计数
+                            int paramOccurrenceInFile = 0;
 
                             // 检查参数出现次数字典中是否存在该参数
                             if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
@@ -1883,9 +1883,15 @@ namespace TempBatch
                                 string placeholder1 = $"#{config.ParamName}";
                                 string placeholder2 = $"#{{{config.ParamName}}}";
                                 
-                                // 替换所有匹配项
-                                currentContent = ReplaceAllOccurrences(currentContent, placeholder2, paramValue);
-                                currentContent = ReplaceAllOccurrences(currentContent, placeholder1, paramValue);
+                                // 先替换完整格式，再替换简化格式
+                                if (currentContent.Contains(placeholder2))
+                                {
+                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder2, paramValue);
+                                }
+                                else if (currentContent.Contains(placeholder1))
+                                {
+                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder1, paramValue);
+                                }
                             }
                         }
 
@@ -2298,6 +2304,12 @@ namespace TempBatch
         public int GlobalSequence { get; set; }
         public int TotalRequiredRows { get; set; }
         public int RowOffsetPerFile { get; set; }
+        
+        // 添加重置序列的方法
+        public void ResetSequence()
+        {
+            GlobalSequence = 0;
+        }
 
         public bool IsValid(out string errorMsg)
         {
