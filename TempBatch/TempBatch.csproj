@@ -61,7 +61,7 @@
       <HintPath>packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
     <Reference Include="System.Text.Encoding.CodePages, Version=9.0.0.10, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>packages\System.Text.Encoding.CodePages.9.0.10\lib\net462\System.Text.Encoding.CodePages.dll</HintPath>
+      <HintPath>..\ToolboxHost\packages\System.Text.Encoding.CodePages.9.0.10\lib\net462\System.Text.Encoding.CodePages.dll</HintPath>
     </Reference>
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml.Linq" />
@@ -71,7 +71,7 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
     <Reference Include="Ude, Version=0.1.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>packages\UDE.CSharp.1.1.0\lib\Ude.dll</HintPath>
+      <HintPath>..\ToolboxHost\packages\UDE.CSharp.1.1.0\lib\Ude.dll</HintPath>
     </Reference>
     <Reference Include="WindowsBase" />
   </ItemGroup>
@@ -99,4 +99,46 @@
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>echo 开始部署插件目录结构...
+mkdir "$(SolutionDir)..\Deploy\$(ProjectName)\Dependencies"
+mkdir "$(SolutionDir)..\Deploy\$(ProjectName)\Resources"
+
+copy "$(TargetPath)" "$(SolutionDir)..\Deploy\$(ProjectName)\"
+if exist "$(TargetDir)$(TargetName).pdb" (
+    copy "$(TargetDir)$(TargetName).pdb" "$(SolutionDir)..\Deploy\$(ProjectName)\"
+) else (
+    echo 没有找到 PDB 文件
+)
+
+for %25%25f in ("$(TargetDir)*.dll") do (
+    if /i not "%25%25~nf" == "$(ProjectName)" (
+        copy "%25%25f" "$(SolutionDir)..\Deploy\$(ProjectName)\Dependencies\"
+    )
+)
+
+for %25%25f in ("$(TargetDir)*.exe") do (
+    if /i not "%25%25~nf" == "$(ProjectName)" (
+        copy "%25%25f" "$(SolutionDir)..\Deploy\$(ProjectName)\Dependencies\"
+    )
+)
+
+if exist "$(ProjectDir)Resources\*" (
+    xcopy "$(ProjectDir)Resources\*" "$(SolutionDir)..\Deploy\$(ProjectName)\Resources\" /Y /I /E
+) else (
+    echo 没有找到 Resources 文件夹
+)
+
+if not exist "$(SolutionDir)..\Deploy\$(ProjectName)\plugin.json" (
+    echo {"name": "$(ProjectName)", "version": "1.0.0", "entryPoint": "$(TargetFileName)"} &gt; "$(SolutionDir)..\Deploy\$(ProjectName)\plugin.json"
+)
+
+if not exist "$(SolutionDir)..\Deploy\$(ProjectName)\README.txt" (
+    echo # $(ProjectName) Plugin &gt; "$(SolutionDir)..\Deploy\$(ProjectName)\README.txt"
+    echo. &gt;&gt; "$(SolutionDir)..\Deploy\$(ProjectName)\README.txt"
+    echo This plugin provides batch processing functionality for temperature data. &gt;&gt; "$(SolutionDir)..\Deploy\$(ProjectName)\README.txt"
+)
+
+echo 插件部署完成！目录：$(SolutionDir)..\Deploy\$(ProjectName)</PostBuildEvent>
+  </PropertyGroup>
 </Project>

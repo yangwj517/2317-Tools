@@ -1838,8 +1838,8 @@ namespace TempBatch
                         {
                             if (!config.IsEnable) continue;
                             
-                            // 为每个参数维护一个在当前文件中的出现计数
-                            int paramOccurrenceInFile = 0;
+                            //// 为每个参数维护一个在当前文件中的出现计数
+                            //int paramOccurrenceInFile = 0;
 
                             // 检查参数出现次数字典中是否存在该参数
                             if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
@@ -2270,7 +2270,7 @@ namespace TempBatch
                         var parts = config.FixedValue.Split('+');
                         if (int.TryParse(parts[0], out int start) && int.TryParse(parts[1], out int step))
                         {
-                            value = (start + occurrenceIndex * step).ToString();
+                            value = (start + (config.Index++) * step).ToString();
                         }
                         else
                         {
@@ -2304,6 +2304,13 @@ namespace TempBatch
         public int GlobalSequence { get; set; }
         public int TotalRequiredRows { get; set; }
         public int RowOffsetPerFile { get; set; }
+
+        public int Index { get; set; }
+
+        public ParamConfig()
+        {
+            Index = 0;
+        }
         
         // 添加重置序列的方法
         public void ResetSequence()
@@ -2369,7 +2376,8 @@ namespace TempBatch
                 CurrentSequence = this.CurrentSequence,
                 GlobalSequence = this.GlobalSequence,
                 TotalRequiredRows = this.TotalRequiredRows,
-                RowOffsetPerFile = this.RowOffsetPerFile
+                RowOffsetPerFile = this.RowOffsetPerFile,
+                Index = this.Index
             };
         }
     }
