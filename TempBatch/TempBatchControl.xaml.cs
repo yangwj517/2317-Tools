@@ -307,7 +307,8 @@ namespace TempBatch
                 return;
             }
 
-            if (_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text))
+            if ((_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text)) && 
+                (_templateFiles == null || _templateFiles.Count == 0))
             {
                 UpdateStatus("请选择有效的模板文件或模板文件夹");
                 return;
@@ -463,7 +464,7 @@ namespace TempBatch
 
                 // 保存当前UI控件的值到局部变量，避免跨线程访问
                 string excelFilePath = _filePathTextBox?.Text;
-                string templateFilePath = _tempFilePathTextBox?.Text;
+                string templateFilePath = _templateFiles[0];
                 string selectedSheetName = _sheetComboBox?.SelectedItem?.ToString();
                 string fileNameFormat = _fileNameFormatTextBox?.Text;
                 bool mergeFiles = _mergeFilesCheckBox?.IsChecked ?? false;
@@ -1331,6 +1332,11 @@ namespace TempBatch
                 return source;
             return source.Substring(0, index) + replace + source.Substring(index + find.Length);
         }
+        
+        private string ReplaceAllOccurrences(string source, string find, string replace)
+        {
+            return source.Replace(find, replace);
+        }
 
         private void UpdateStatus(string message)
         {
@@ -1596,9 +1602,22 @@ namespace TempBatch
                     return;
                 }
 
-                if (string.IsNullOrEmpty(templateFilePath) || !File.Exists(templateFilePath))
+                // 修改模板文件验证逻辑以支持文件夹模式
+                bool isValidTemplate = false;
+                if (_templateFiles != null && _templateFiles.Count > 0)
                 {
-                    UpdateStatus("请选择有效的模板文件");
+                    // 文件夹模式：检查是否有模板文件
+                    isValidTemplate = _templateFiles.Count > 0;
+                }
+                else if (!string.IsNullOrEmpty(templateFilePath) && File.Exists(templateFilePath))
+                {
+                    // 单文件模式：检查文件是否存在
+                    isValidTemplate = true;
+                }
+
+                if (!isValidTemplate)
+                {
+                    UpdateStatus("请选择有效的模板文件或模板文件夹");
                     return;
                 }
 
@@ -1858,16 +1877,10 @@ namespace TempBatch
                                 // 替换参数占位符
                                 string placeholder1 = $"#{config.ParamName}";
                                 string placeholder2 = $"#{{{config.ParamName}}}";
-
-                                // 先替换完整格式，再替换简化格式
-                                if (currentContent.Contains(placeholder2))
-                                {
-                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder2, paramValue);
-                                }
-                                else if (currentContent.Contains(placeholder1))
-                                {
-                                    currentContent = ReplaceFirstOccurrence(currentContent, placeholder1, paramValue);
-                                }
+                                
+                                // 替换所有匹配项
+                                currentContent = ReplaceAllOccurrences(currentContent, placeholder2, paramValue);
+                                currentContent = ReplaceAllOccurrences(currentContent, placeholder1, paramValue);
                             }
                         }
 
