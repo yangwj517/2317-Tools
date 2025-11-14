@@ -2270,7 +2270,7 @@ namespace TempBatch
                         var parts = config.FixedValue.Split('+');
                         if (int.TryParse(parts[0], out int start) && int.TryParse(parts[1], out int step))
                         {
-                            value = (start + fileIndex * step).ToString();
+                            value = (start + occurrenceIndex * step).ToString();
                         }
                         else
                         {
