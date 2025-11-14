@@ -1837,13 +1837,18 @@ namespace TempBatch
                         foreach (var config in paramConfigs)
                         {
                             if (!config.IsEnable) continue;
+                            
+                            // 重置每个参数的计数器
+                            int paramOccurrenceCount = 0;
 
                             // 检查参数出现次数字典中是否存在该参数
                             if (!_paramOccurrenceCount.TryGetValue(config.ParamName, out int paramOccurrence))
                             {
                                 paramOccurrence = 1; // 使用默认值
                             }
-
+                            // 创建一个临时内容用于替换
+                            string tempContent = currentContent;
+                            
                             for (int occurrenceIndex = 0; occurrenceIndex < paramOccurrence; occurrenceIndex++)
                             {
                                 bool skipExcelRow;
@@ -2259,8 +2264,7 @@ namespace TempBatch
                         var parts = config.FixedValue.Split('+');
                         if (int.TryParse(parts[0], out int start) && int.TryParse(parts[1], out int step))
                         {
-                            value = (start + config.GlobalSequence * step).ToString();
-                            config.GlobalSequence++;
+                            value = (start + fileIndex * step).ToString();
                         }
                         else
                         {
