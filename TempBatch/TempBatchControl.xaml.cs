@@ -307,7 +307,8 @@ namespace TempBatch
                 return;
             }
 
-            if (_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text))
+            if ((_tempFilePathTextBox == null || string.IsNullOrEmpty(_tempFilePathTextBox.Text)) && 
+                (_templateFiles == null || _templateFiles.Count == 0))
             {
                 UpdateStatus("请选择有效的模板文件或模板文件夹");
                 return;
@@ -1596,9 +1597,22 @@ namespace TempBatch
                     return;
                 }
 
-                if (string.IsNullOrEmpty(templateFilePath) || !File.Exists(templateFilePath))
+                // 修改模板文件验证逻辑以支持文件夹模式
+                bool isValidTemplate = false;
+                if (_templateFiles != null && _templateFiles.Count > 0)
                 {
-                    UpdateStatus("请选择有效的模板文件");
+                    // 文件夹模式：检查是否有模板文件
+                    isValidTemplate = _templateFiles.Count > 0;
+                }
+                else if (!string.IsNullOrEmpty(templateFilePath) && File.Exists(templateFilePath))
+                {
+                    // 单文件模式：检查文件是否存在
+                    isValidTemplate = true;
+                }
+
+                if (!isValidTemplate)
+                {
+                    UpdateStatus("请选择有效的模板文件或模板文件夹");
                     return;
                 }
 
